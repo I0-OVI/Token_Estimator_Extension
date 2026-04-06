@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-# 须在 import tkinter 之前：系统 Tk 弃用提示；对 Aqua 渲染也有帮助
+# Before importing tkinter: silence deprecated-Tk warnings on macOS; helps Aqua rendering.
 if platform.system() == "Darwin":
     os.environ.setdefault("TK_SILENCE_DEPRECATION", "1")
 
@@ -74,7 +74,7 @@ class UiColors:
 
 
 def _macos_dark_appearance() -> bool:
-    """系统为深色时，Tk 在 macOS 上常与「浅色硬编码」冲突，导致整块像空白且难以输入。"""
+    """Detect macOS dark mode; mismatched light-themed Tk can look blank or hard to use."""
     if platform.system() != "Darwin":
         return False
     try:
@@ -155,19 +155,19 @@ def _apply_theme(root: tk.Tk, c: UiColors) -> None:
         pass
 
 
-HELP_CN = (
-    "【各字段写在哪里】对应 JSON 里的键名如下。\n"
-    "• 标签「User prompt」→ userPrompt：本轮你在 Cursor 里输入的问题/指令（可复制 Chat 里用户气泡）。\n"
-    "• 标签「Assistant」→ assistantMarkdown：助手完整回复，支持 Markdown（可复制助手气泡）。\n"
-    "• 标签「Thought」→ thoughtMarkdown：模型思考/推理全文（若界面有单独区块可复制；与 prompt/answer 同级）。\n"
-    "• 标签「数值与文件」→ cursorReportedTokens：Cursor 用量/账单里显示的本轮 token（没有就留空）。\n"
-    "  → linesAdded / linesRemoved：本轮改代码大致「增加行数 / 删除行数」（可看 git diff 或自己估）。\n"
-    "  → linesTotalAbs 保存时会自动 = 加 + 减，不必手填。\n"
-    "  → grepContextFileCount / readContextFileCount：本轮「grep/搜索」与「read_file」类涉及的大致文件数（整数即可）。\n"
-    "  → filesRead（可选）：路径列表，一行一个；可不填——相对路径或文件名即可，不必写绝对路径。\n"
-    "  → filesReadCount：保存时 = 上两项之和；若未填数字但填了路径，则用路径行数。\n"
-    "  → filesChangedCount / filesTouched：实际改过的文件个数与路径列表。\n"
-    "保存：追加一行到下方「日志文件」路径（与 VS Code 扩展写入格式相同）。"
+HELP_TEXT = (
+    "JSON keys for each tab:\n"
+    "• Tab “User prompt” → userPrompt: your question or instruction for this turn (e.g. from chat).\n"
+    "• Tab “Assistant” → assistantMarkdown: full assistant reply (Markdown ok).\n"
+    "• Tab “Thought” → thoughtMarkdown: reasoning / thinking text if your UI exposes it; leave empty if none.\n"
+    "• Tab “Numbers & files” → cursorReportedTokens: token count shown in Cursor usage/billing for this turn (optional).\n"
+    "  → linesAdded / linesRemoved: approximate lines added / removed this turn (from git diff or estimate).\n"
+    "  → linesTotalAbs is computed on save (add + remove); you do not type it.\n"
+    "  → grepContextFileCount / readContextFileCount: rough counts for grep/search vs read_file-style context (integers).\n"
+    "  → filesRead (optional): one path per line; relative paths or filenames are fine.\n"
+    "  → filesReadCount on save = sum of the two counts above, or line count of filesRead if counts are zero but paths exist.\n"
+    "  → filesChangedCount / filesTouched: count and list of files you actually edited.\n"
+    "Save appends one JSON line to the log path below (same format as the Token Prediction VS Code extension)."
 )
 
 
@@ -193,7 +193,7 @@ def parse_optional_tokens(raw: str) -> int | None:
     raw = raw.strip()
     if not raw:
         return None
-    # Support "6.7万" style loosely
+    # Support Chinese "万" (×10k) and plain integers
     raw = raw.replace(",", "").replace(" ", "")
     if raw.endswith("万"):
         try:
@@ -254,7 +254,7 @@ def build_record(
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Token 样本记录器（JSONL）")
+        self.title("Token sample logger (JSONL)")
         self.geometry("920x820")
         self.minsize(640, 520)
         self._c = theme_colors()
@@ -269,11 +269,11 @@ class App(tk.Tk):
         self.log_path_var = tk.StringVar(value=str(default_log_path()))
         c = self._c
 
-        help_box = ttk.LabelFrame(self, text="字段说明（写在哪里）", padding=8)
+        help_box = ttk.LabelFrame(self, text="Field reference", padding=8)
         help_box.grid(row=0, column=0, sticky=tk.EW, padx=10, pady=(10, 4))
         tk.Label(
             help_box,
-            text=HELP_CN,
+            text=HELP_TEXT,
             justify=tk.LEFT,
             wraplength=860,
             bg=c.bg_help,
@@ -293,7 +293,7 @@ class App(tk.Tk):
         top.grid(row=1, column=0, sticky=tk.EW, padx=10, pady=2)
         ttk.Label(
             top,
-            text="日志文件（每点一次「追加」就 append 一行 JSONL；字段 userPrompt 等都会写进这一行）:",
+            text="Log file (each Append writes one JSONL line; userPrompt and other fields go on that line):",
         ).pack(anchor=tk.W)
         path_row = ttk.Frame(top)
         path_row.pack(fill=tk.X, pady=(0, 6))
@@ -311,15 +311,15 @@ class App(tk.Tk):
         tab_thought = ttk.Frame(self._nb, padding=6)
         tab_meta = ttk.Frame(self._nb, padding=6)
         self._nb.add(tab_user, text="① User prompt")
-        self._nb.add(tab_asst, text="② Assistant 回复")
-        self._nb.add(tab_thought, text="③ Thought / 思考")
-        self._nb.add(tab_meta, text="④ 数值与文件")
+        self._nb.add(tab_asst, text="② Assistant")
+        self._nb.add(tab_thought, text="③ Thought")
+        self._nb.add(tab_meta, text="④ Numbers & files")
 
         tab_user.columnconfigure(0, weight=1)
         tab_user.rowconfigure(1, weight=1)
         tk.Label(
             tab_user,
-            text="→ JSON 字段【userPrompt】：粘贴本轮「用户侧」完整内容（可删减后再保存）。",
+            text="→ JSON key userPrompt: paste the full user message for this turn (edit before save if needed).",
             bg=c.bg_main,
             fg=c.fg_muted,
             font=self._font,
@@ -341,7 +341,7 @@ class App(tk.Tk):
         tab_asst.rowconfigure(1, weight=1)
         tk.Label(
             tab_asst,
-            text="→ JSON 字段【assistantMarkdown】：粘贴助手回复全文；需要可删改。",
+            text="→ JSON key assistantMarkdown: paste the full assistant reply; trim if needed.",
             bg=c.bg_main,
             fg=c.fg_muted,
             font=self._font,
@@ -363,7 +363,7 @@ class App(tk.Tk):
         tab_thought.rowconfigure(1, weight=1)
         tk.Label(
             tab_thought,
-            text="→ JSON 字段【thoughtMarkdown】：粘贴模型思考/推理全文（与 user / assistant 同级；无则留空）。",
+            text="→ JSON key thoughtMarkdown: model reasoning text if any; leave empty otherwise.",
             bg=c.bg_main,
             fg=c.fg_muted,
             font=self._font,
@@ -385,7 +385,7 @@ class App(tk.Tk):
         tab_meta.rowconfigure(1, weight=1)
         tk.Label(
             tab_meta,
-            text="以下为训练用「特征」：用量、改行数、文件列表；与扩展插件里字段一致。",
+            text="Training-style features: usage, line deltas, file lists (same fields as the extension).",
             bg=c.bg_main,
             fg=c.fg_muted,
             font=self._font,
@@ -426,7 +426,7 @@ class App(tk.Tk):
         meta_grid.columnconfigure(2, weight=1)
 
         r = 0
-        ttk.Label(meta_grid, text="【cursorReportedTokens】Cursor 显示的本轮 token：").grid(
+        ttk.Label(meta_grid, text="cursorReportedTokens — tokens for this turn (Cursor usage/billing):").grid(
             row=r, column=0, sticky=tk.W, pady=4
         )
         self.var_tokens = tk.StringVar()
@@ -435,72 +435,76 @@ class App(tk.Tk):
         )
         ttk.Label(
             meta_grid,
-            text="可选；整数或 6.7万；无则留空",
+            text="Optional; integer; leave empty if unknown",
             foreground=c.fg_muted,
         ).grid(row=r, column=2, sticky=tk.W, padx=8)
 
         r += 1
-        ttk.Label(meta_grid, text="【linesAdded】增加行数 (+)：").grid(
+        ttk.Label(meta_grid, text="linesAdded — lines added (+):").grid(
             row=r, column=0, sticky=tk.W, pady=4
         )
         self.var_plus = tk.StringVar(value="0")
         ttk.Entry(meta_grid, textvariable=self.var_plus, width=12).grid(
             row=r, column=1, sticky=tk.W, pady=4
         )
-        ttk.Label(meta_grid, text="无改动填 0", foreground=c.fg_muted).grid(
+        ttk.Label(meta_grid, text="Use 0 if none", foreground=c.fg_muted).grid(
             row=r, column=2, sticky=tk.W, padx=8
         )
 
         r += 1
-        ttk.Label(meta_grid, text="【linesRemoved】删除行数 (−)：").grid(
+        ttk.Label(meta_grid, text="linesRemoved — lines removed (−):").grid(
             row=r, column=0, sticky=tk.W, pady=4
         )
         self.var_minus = tk.StringVar(value="0")
         ttk.Entry(meta_grid, textvariable=self.var_minus, width=12).grid(
             row=r, column=1, sticky=tk.W, pady=4
         )
-        ttk.Label(meta_grid, text="保存时自动算 linesTotalAbs = + + −", foreground=c.fg_muted).grid(
-            row=r, column=2, sticky=tk.W, padx=8
-        )
+        ttk.Label(
+            meta_grid,
+            text="linesTotalAbs = added + removed on save",
+            foreground=c.fg_muted,
+        ).grid(row=r, column=2, sticky=tk.W, padx=8)
 
         r += 1
-        ttk.Label(meta_grid, text="【filesChangedCount】涉及文件个数：").grid(
+        ttk.Label(meta_grid, text="filesChangedCount — number of files touched:").grid(
             row=r, column=0, sticky=tk.W, pady=4
         )
         self.var_file_count = tk.StringVar(value="0")
         ttk.Entry(meta_grid, textvariable=self.var_file_count, width=12).grid(
             row=r, column=1, sticky=tk.W, pady=4
         )
-        ttk.Label(meta_grid, text="若下面已填路径且此处为 0，会用路径行数代替", foreground=c.fg_muted).grid(
-            row=r, column=2, sticky=tk.W, padx=8
-        )
+        ttk.Label(
+            meta_grid,
+            text="If 0 but paths below are filled, count defaults to number of paths",
+            foreground=c.fg_muted,
+        ).grid(row=r, column=2, sticky=tk.W, padx=8)
 
         r += 1
-        ttk.Label(meta_grid, text="【grepContextFileCount】grep/搜索 涉及文件数：").grid(
+        ttk.Label(meta_grid, text="grepContextFileCount — grep/search context files:").grid(
             row=r, column=0, sticky=tk.W, pady=4
         )
         self.var_grep_files = tk.StringVar(value="0")
         self.entry_grep = ttk.Entry(meta_grid, textvariable=self.var_grep_files, width=12)
         self.entry_grep.grid(row=r, column=1, sticky=tk.W, pady=4)
-        ttk.Label(meta_grid, text="整数即可", foreground=c.fg_muted).grid(
+        ttk.Label(meta_grid, text="Integer", foreground=c.fg_muted).grid(
             row=r, column=2, sticky=tk.W, padx=8
         )
 
         r += 1
-        ttk.Label(meta_grid, text="【readContextFileCount】read_file 类 文件数：").grid(
+        ttk.Label(meta_grid, text="readContextFileCount — read_file-style context files:").grid(
             row=r, column=0, sticky=tk.W, pady=4
         )
         self.var_read_files = tk.StringVar(value="0")
         self.entry_read = ttk.Entry(meta_grid, textvariable=self.var_read_files, width=12)
         self.entry_read.grid(row=r, column=1, sticky=tk.W, pady=4)
-        ttk.Label(meta_grid, text="与上一项相加 → filesReadCount", foreground=c.fg_muted).grid(
+        ttk.Label(meta_grid, text="Added with line above → filesReadCount", foreground=c.fg_muted).grid(
             row=r, column=2, sticky=tk.W, padx=8
         )
 
         r += 1
         ttk.Label(
             meta_grid,
-            text="【filesRead】可选：路径一行一个（相对路径/文件名即可，不必绝对路径）：",
+            text="filesRead (optional) — one path per line (relative or filename is fine):",
         ).grid(row=r, column=0, columnspan=3, sticky=tk.W, pady=(12, 4))
         r += 1
         read_frame = ttk.Frame(meta_grid)
@@ -528,7 +532,7 @@ class App(tk.Tk):
         r += 1
         ttk.Label(
             meta_grid,
-            text="【filesTouched】实际改写过的文件路径（一行一个，相对/绝对均可）：",
+            text="filesTouched — paths you actually edited (one per line, relative or absolute):",
         ).grid(row=r, column=0, columnspan=3, sticky=tk.W, pady=(12, 4))
         r += 1
         files_frame = ttk.Frame(meta_grid)
@@ -556,15 +560,15 @@ class App(tk.Tk):
 
         bottom = ttk.Frame(self, padding=8)
         bottom.grid(row=3, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
-        ttk.Button(bottom, text="追加一条样本到 JSONL", command=self.append_sample).pack(
+        ttk.Button(bottom, text="Append to JSONL", command=self.append_sample).pack(
             side=tk.LEFT
         )
-        ttk.Button(bottom, text="清空全部", command=self.clear_all).pack(
+        ttk.Button(bottom, text="Clear all", command=self.clear_all).pack(
             side=tk.LEFT, padx=(12, 0)
         )
         ttk.Label(
             bottom,
-            text="（+）+（−）的总活动行数在保存时自动写入 linesTotalAbs",
+            text="linesTotalAbs = added + removed on save",
             foreground=c.fg_muted,
         ).pack(side=tk.RIGHT)
 
@@ -706,10 +710,10 @@ class App(tk.Tk):
             with path.open("a", encoding="utf-8") as f:
                 f.write(line)
         except OSError as e:
-            messagebox.showerror("写入失败", str(e))
+            messagebox.showerror("Write failed", str(e))
             return
 
-        messagebox.showinfo("已保存", f"已追加一行到：\n{path}")
+        messagebox.showinfo("Saved", f"Appended one line to:\n{path}")
 
     def clear_all(self) -> None:
         self.txt_user.delete("1.0", tk.END)
@@ -729,12 +733,12 @@ def main() -> None:
     if not _tk_is_supported():
         pl = tk.Tcl().eval("info patchlevel")
         print(
-            f"当前解释器使用的 Tcl/Tk 版本为 {pl}，过旧；在 macOS 上常见症状是窗口全灰/空白、无法输入。\n"
-            "请换用自带 Tcl/Tk 8.6+ 的 Python，例如：\n"
+            f"This Tcl/Tk is too old ({pl}). On macOS you may get a blank window or no input.\n"
+            "Use a Python build with Tcl/Tk 8.6+, for example:\n"
             "  brew install python-tk && brew install python@3.12\n"
             "  $(brew --prefix python@3.12)/bin/python3 tools/token_sample_logger.py\n"
-            "（Apple Silicon 上 Homebrew 一般为 /opt/homebrew。）\n"
-            "或安装 https://www.python.org/downloads/ 官方 macOS 包，再用其中的 python3。\n",
+            "(Homebrew on Apple Silicon is often under /opt/homebrew.)\n"
+            "Or install the official macOS build from https://www.python.org/downloads/ and use that python3.\n",
             file=sys.stderr,
         )
         sys.exit(1)
