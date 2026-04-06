@@ -1,0 +1,242 @@
+{
+  "name": "token-prediction",
+  "displayName": "Token Prediction",
+  "description": "Estimate token usage from task context using tokenizer-aligned counts and baseline heuristics.",
+  "version": "0.1.12",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "tokenPrediction.estimate",
+        "category": "Token Prediction",
+        "title": "Estimate tokens…"
+      },
+      {
+        "command": "tokenPrediction.interactionLog",
+        "category": "Token Prediction",
+        "title": "Interaction log…"
+      },
+      {
+        "command": "tokenPrediction.scanWorkspace",
+        "category": "Token Prediction",
+        "title": "Scan workspace…"
+      },
+      {
+        "command": "tokenPrediction.llm",
+        "category": "Token Prediction",
+        "title": "LLM…"
+      }
+    ],
+    "configuration": {
+      "title": "Token Prediction",
+      "properties": {
+        "tokenPrediction.tokenizer": {
+          "type": "string",
+          "default": "cl100k_base",
+          "enum": [
+            "cl100k_base",
+            "o200k_base"
+          ],
+          "description": "tiktoken encoding id; align with your billing model."
+        },
+        "tokenPrediction.taskKind": {
+          "type": "string",
+          "default": "general",
+          "enum": [
+            "general",
+            "code",
+            "refactor",
+            "explain",
+            "chat"
+          ],
+          "description": "Heuristic profile for output token multiplier."
+        },
+        "tokenPrediction.includeHistoryTurns": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 50,
+          "description": "Assumed extra user+assistant turns to add to the estimate (0 = single-shot)."
+        },
+        "tokenPrediction.logFilePath": {
+          "type": "string",
+          "default": "",
+          "description": "JSONL log path. Empty = <workspace>/.cursor/token_prediction_log.jsonl. Relative paths are under the workspace folder."
+        },
+        "tokenPrediction.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show live heuristic in the status bar (Token Prediction: ~X万) from the active editor. Composer/chat input cannot be read by extensions — draft in a file or paste into an editor tab to preview."
+        },
+        "tokenPrediction.workspaceScan.includeGlob": {
+          "type": "string",
+          "default": "**/*",
+          "description": "Glob for workspace.findFiles (relative to each workspace folder). Example: **/*.{ts,tsx,js}"
+        },
+        "tokenPrediction.workspaceScan.excludeGlob": {
+          "type": "string",
+          "default": "",
+          "description": "Extra exclude globs merged with built-in excludes (node_modules, .git, dist, out, .cursor). Comma-separated, e.g. **/vendor/**,**/build/**"
+        },
+        "tokenPrediction.workspaceScan.maxFiles": {
+          "type": "number",
+          "default": 50000,
+          "minimum": 1,
+          "maximum": 500000,
+          "description": "Stop after this many files (enumeration + stat); output marks truncated if hit."
+        },
+        "tokenPrediction.workspaceScan.outputRelativePath": {
+          "type": "string",
+          "default": ".cursor/token_prediction_workspace_scan.json",
+          "description": "JSON summary path relative to each workspace folder root."
+        },
+        "tokenPrediction.workspaceScan.samplePathCount": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 200,
+          "description": "Include this many sample relative paths (posix) in the JSON for sanity checks."
+        },
+        "tokenPrediction.workspaceScan.includeAbsolutePathsInOutput": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, include workspaceFolderAbsolutePath in JSON (avoid sharing the file if sensitive)."
+        },
+        "tokenPrediction.importGraph.maxFilesRead": {
+          "type": "number",
+          "default": 100000,
+          "minimum": 1,
+          "maximum": 500000,
+          "description": "Max code files to include when building the import graph (combined scan+graph command or offline script)."
+        },
+        "tokenPrediction.importGraph.maxBytesPerFile": {
+          "type": "number",
+          "default": 512000,
+          "minimum": 1024,
+          "description": "Skip parsing files larger than this many bytes."
+        },
+        "tokenPrediction.importGraph.edgesCap": {
+          "type": "number",
+          "default": 500000,
+          "minimum": 1,
+          "description": "Stop after this many directed edges in the import graph."
+        },
+        "tokenPrediction.importGraph.graphOutputRelativePath": {
+          "type": "string",
+          "default": ".cursor/token_prediction_import_graph.json",
+          "description": "Import graph JSON path relative to each workspace folder root."
+        },
+        "tokenPrediction.importGraph.tokenizeNodesOnScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "After building the import graph, read each node’s file from disk and tiktoken the source text (not just the path string): bounded bytes per file, up to N files → writes graph token budget JSON for workspace boost. Same tokenizer as tokenPrediction.tokenizer."
+        },
+        "tokenPrediction.importGraph.tokenizeMaxNodes": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "maximum": 50000,
+          "description": "Max source files to read for the token budget (one graph node id = one path; rest of nodes omitted from the sum)."
+        },
+        "tokenPrediction.importGraph.tokenizeMaxBytesPerNode": {
+          "type": "number",
+          "default": 512000,
+          "minimum": 1024,
+          "description": "Per-file byte cap when reading graph nodes for tiktoken (truncates large files like the graph build step)."
+        },
+        "tokenPrediction.importGraph.graphTokenBudgetRelativePath": {
+          "type": "string",
+          "default": ".cursor/token_prediction_graph_token_budget.json",
+          "description": "Written on scan: totalTokens plus byFile[{id,tokens}] per graph node source file (tokenizationScope: file_contents). Use byFile to sum tokens for read/edit subsets."
+        },
+        "tokenPrediction.inputLengthModel": {
+          "type": "string",
+          "default": "tiktoken",
+          "enum": ["tiktoken", "char_heuristic", "both"],
+          "enumDescriptions": [
+            "Use tiktoken (cl100k/o200k) for input length and totals.",
+            "Use 0.3 tok per non-CJK char and 0.6 per CJK char for input length and totals.",
+            "Use tiktoken for totals; also show char heuristic in notes."
+          ],
+          "description": "How to estimate input-side length for output heuristics."
+        },
+        "tokenPrediction.llm.endpointPreset": {
+          "type": "string",
+          "default": "deepseek",
+          "enum": ["deepseek", "openai", "custom"],
+          "enumDescriptions": [
+            "DeepSeek: https://api.deepseek.com/v1/chat/completions (DeepSeek API key).",
+            "OpenAI: https://api.openai.com/v1/chat/completions (OpenAI API key).",
+            "Custom URL (OpenAI-compatible POST) in tokenPrediction.llm.apiUrl."
+          ],
+          "description": "Which host receives LLM scope requests. API key is stored via the command (Secret Storage), never in settings."
+        },
+        "tokenPrediction.llm.apiUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Only when endpoint preset is Custom: full chat-completions URL (e.g. https://api.deepseek.com/v1/chat/completions)."
+        },
+        "tokenPrediction.llm.model": {
+          "type": "string",
+          "default": "deepseek-chat",
+          "description": "Model id for LLM scope (e.g. deepseek-chat for DeepSeek; gpt-4o-mini for OpenAI)."
+        },
+        "tokenPrediction.llm.lastScopeOutputRelativePath": {
+          "type": "string",
+          "default": ".cursor/token_prediction_llm_scope_last.json",
+          "description": "After a successful LLM scope run, extraContextTokensGuess is saved here for optional totals boost in estimates."
+        },
+        "tokenPrediction.workspaceContextInEstimates": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, add an extra token budget when import graph and/or workspace scan JSON exists, or when last LLM scope cache has extraContextTokensGuess > 0. No files → same as before."
+        },
+        "tokenPrediction.keywordTaskKindMode": {
+          "type": "string",
+          "default": "off",
+          "enum": ["off", "override", "hint_only"],
+          "enumDescriptions": [
+            "Ignore keyword signals (use settings taskKind only).",
+            "Use inferred taskKind from keywords/patterns when signals fire (still heuristic).",
+            "Keep settings taskKind for math; append inferred intent to estimate notes only."
+          ],
+          "description": "Local keyword/pattern classifier for output heuristics — no API."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node test/eval-smoke.cjs && node test/keyword-intent-smoke.cjs",
+    "organize-cursor-export": "node scripts/organize-cursor-export.mjs --tokens",
+    "estimate-token-split": "node scripts/estimate-token-split-from-export.mjs",
+    "analyze-agent-transcripts": "node scripts/analyze-agent-transcripts-backup.mjs",
+    "sample-logger": "python3 tools/token_sample_logger.py",
+    "validate-token-prediction-log": "node scripts/ml/validate-token-prediction-log.mjs",
+    "build-import-graph": "node scripts/ml/build-import-graph.mjs",
+    "build-feature-table": "npm run compile && node scripts/ml/build-feature-table.mjs",
+    "aggregate-agent-transcripts-csv": "node scripts/ml/aggregate-agent-transcripts-csv.mjs",
+    "validate-agent-transcripts-per-line": "node scripts/ml/validate-agent-transcripts-per-line.mjs",
+    "train-offline": "node scripts/ml/run-train.mjs",
+    "package:vsix": "npm run compile && npx --yes @vscode/vsce@latest package --allow-missing-repository",
+    "llm-scope-offline": "node scripts/llm-scope-offline.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@dqbd/tiktoken": "^1.0.15",
+    "jsonrepair": "^3.13.3"
+  }
+}

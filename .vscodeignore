@@ -1,0 +1,32 @@
+# vsce 打包时忽略这些路径（避免把导出数据、密钥、开发文件打进 .vsix）
+# 打包前务必已执行: npm run compile
+
+# TypeScript 源码（只发布编译结果 out/）
+src/**
+**/*.ts
+tsconfig.json
+**/*.map
+
+# Python venv（勿打进扩展，体积极大）
+.venv/**
+
+# 开发 / 测试 / 脚本
+.vscode/**
+.vscode-test/**
+test/**
+scripts/**
+tools/**
+
+# 本地 Cursor 导出、工作区缓存（体积大且可能含敏感信息）
+**/.cursor/**
+cursor_export_*/
+
+# 不发布完整 node_modules 源码树时由 vsce 按 dependencies 处理；
+# 若你曾把仓库当「整包」打进去，务必排除上面的数据目录。
+.git/**
+.gitignore
+
+# 产物与杂项
+*.vsix
+**/.DS_Store
+**/__pycache__/**

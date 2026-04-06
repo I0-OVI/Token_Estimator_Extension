@@ -1,0 +1,13 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+out/
+*.vsix
+.DS_Store
+
+# Local Cursor state, caches, and interaction logs (may contain prompts/paths)
+.cursor/
+
+# Cursor workspace exports (large, often sensitive)
+cursor_export_*/
