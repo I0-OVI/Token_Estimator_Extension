@@ -12,6 +12,7 @@ import { openInteractionLogPanel } from "./interactionLogPanel";
 import { parseKeywordTaskKindMode, runEstimateWithKeywords } from "./keywordIntent";
 import { registerStatusBar } from "./statusBar";
 import { countTokens, freeAllEncodings } from "./tokenizer";
+import { runClipboardLlmEstimate } from "./clipboardLlmEstimate";
 import { runEstimateScopeWithLlm, setLlmApiKey } from "./llmScope";
 import { enrichEstimateFromWorkspaceSettings } from "./workspaceContextBoost";
 
@@ -136,7 +137,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("tokenPrediction.estimate", (...args: unknown[]) =>
-      runEstimateCommand(args, estimateFromActiveEditor, estimateFromClipboard)
+      runEstimateCommand(args, estimateFromActiveEditor, estimateFromClipboard, () =>
+        runClipboardLlmEstimate(context)
+      )
+    ),
+    vscode.commands.registerCommand("tokenPrediction.estimateClipboardLlm", () =>
+      runClipboardLlmEstimate(context)
     ),
     vscode.commands.registerCommand("tokenPrediction.interactionLog", (...args: unknown[]) =>
       runInteractionLogCommand(args, {

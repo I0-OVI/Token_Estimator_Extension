@@ -11,7 +11,8 @@ type Arg = string | undefined;
 export async function runEstimateCommand(
   args: unknown[],
   estimateFromActiveEditor: () => Promise<void>,
-  estimateFromClipboard: () => Promise<void>
+  estimateFromClipboard: () => Promise<void>,
+  estimateFromClipboardLlm?: () => Promise<void>
 ): Promise<void> {
   const mode = args[0] as Arg;
   if (mode === "editor") {
@@ -20,6 +21,10 @@ export async function runEstimateCommand(
   }
   if (mode === "clipboard") {
     await estimateFromClipboard();
+    return;
+  }
+  if (mode === "clipboardLlm") {
+    await estimateFromClipboardLlm?.();
     return;
   }
 
@@ -36,6 +41,11 @@ export async function runEstimateCommand(
         description: "Text you copied (e.g. Composer prompt)",
         value: "clipboard" as const,
       },
+      {
+        label: "$(hubot) Clipboard + LLM",
+        description: "API key required; thinking / difficulty merged into totals",
+        value: "clipboardLlm" as const,
+      },
     ],
     { title: "Token Prediction: estimate from…", placeHolder: "Choose source" }
   );
@@ -44,8 +54,10 @@ export async function runEstimateCommand(
   }
   if (pick.value === "editor") {
     await estimateFromActiveEditor();
-  } else {
+  } else if (pick.value === "clipboard") {
     await estimateFromClipboard();
+  } else {
+    await estimateFromClipboardLlm?.();
   }
 }
 

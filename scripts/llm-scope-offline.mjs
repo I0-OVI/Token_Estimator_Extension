@@ -14,9 +14,6 @@
  *   LLM_MODEL     default deepseek-chat
  *   GRAPH_JSON    default .cursor/token_prediction_import_graph.json (under --root)
  *   WORKSPACE_NAME default basename of --root
- *   THINKING_TOKENS_PER_SEC  default 32 (0 = no duration-based tokens)
- *   MAX_THINKING_SECONDS       default 1200
- *   DIFFICULTY_EXTRA_PER_STEP  default 400 (0 = no difficulty add-on)
  *
  * Flags:
  *   --root <dir>     repo root (default cwd)
@@ -58,50 +55,6 @@ const apiKey =
   "";
 
 const workspaceName = process.env.WORKSPACE_NAME || path.basename(root);
-
-const THINKING_TOKENS_PER_SEC = Number(process.env.THINKING_TOKENS_PER_SEC ?? "32");
-const MAX_THINKING_SECONDS = Number(process.env.MAX_THINKING_SECONDS ?? "1200");
-const DIFFICULTY_EXTRA_PER_STEP = Number(process.env.DIFFICULTY_EXTRA_PER_STEP ?? "400");
-const BOOST_CAP = 500_000;
-
-function clamp(n, lo, hi) {
-  return Math.min(hi, Math.max(lo, n));
-}
-
-/** Keep formulas in sync with src/llmScopeCompute.ts */
-function combineLlmScopeTokens(params) {
-  const cappedSec = clamp(params.thinkingDurationSeconds, 0, params.maxThinkingDurationSeconds);
-  const effectiveSec = params.needsThinking ? cappedSec : 0;
-  const thinkingTokensFromDuration = Math.round(effectiveSec * Math.max(0, params.thinkingTokensPerSecond));
-  const steps = Math.max(0, clamp(params.questionDifficulty, 1, 5) - 1);
-  const difficultyExtraTokens =
-    params.difficultyExtraTokensPerStep > 0 ? Math.round(steps * params.difficultyExtraTokensPerStep) : 0;
-  const sum = params.extraContextTokensGuess + thinkingTokensFromDuration + difficultyExtraTokens;
-  const extraContextTokensCombined = clamp(sum, 0, BOOST_CAP);
-  return { thinkingTokensFromDuration, difficultyExtraTokens, extraContextTokensCombined };
-}
-
-function parseLlmScopeModelFields(parsed) {
-  const extra =
-    typeof parsed.extraContextTokensGuess === "number" && Number.isFinite(parsed.extraContextTokensGuess)
-      ? Math.round(parsed.extraContextTokensGuess)
-      : 0;
-  const needsThinking = parsed.needsThinking === true;
-  let thinkingSec = 0;
-  if (typeof parsed.thinkingDurationSeconds === "number" && Number.isFinite(parsed.thinkingDurationSeconds)) {
-    thinkingSec = Math.round(parsed.thinkingDurationSeconds);
-  }
-  let diff = 3;
-  if (typeof parsed.questionDifficulty === "number" && Number.isFinite(parsed.questionDifficulty)) {
-    diff = Math.round(parsed.questionDifficulty);
-  }
-  return {
-    extraContextTokensGuess: extra,
-    needsThinking,
-    thinkingDurationSeconds: thinkingSec,
-    questionDifficulty: clamp(diff, 1, 5),
-  };
-}
 
 function usage(err) {
   const msg = `
@@ -218,16 +171,13 @@ async function main() {
     graphSummary,
   });
 
-  const systemPrompt = `You are helping estimate which source files a coding agent might touch, how hard the user's question is, and how much hidden context/thinking might be needed. You receive user text and a partial import graph. Each node has "id" (repo-relative path) and "roleHint" (short description; package.json includes npm script names). Reply with JSON only, no markdown:
-{"likelyFiles":[],"relatedFiles":[],"rationale":"","extraContextTokensGuess":0,"needsThinking":false,"thinkingDurationSeconds":0,"questionDifficulty":3}
+  const systemPrompt = `You are helping estimate which source files a coding agent might touch. You receive user text and a partial import graph. Each node has "id" (repo-relative path) and "roleHint" (short description; package.json includes npm script names). Reply with JSON only, no markdown:
+{"likelyFiles":[],"relatedFiles":[],"rationale":"","extraContextTokensGuess":0}
 Rules:
 - likelyFiles: 0–12 paths that best match the user's intent; each path MUST be exactly one of graphSummary.truncatedSampleNodes[].id (or unambiguous prefix/suffix). Use roleHint for tasks like packaging, build, config.
 - relatedFiles: neighbors in the graph that may also be read/changed.
 - extraContextTokensGuess: rough integer for extra tokens beyond the visible user text (system/tools/context), 0–500000.
-- needsThinking: true if answering well likely requires extended reasoning; false for trivial one-shot answers.
-- thinkingDurationSeconds: estimated seconds of such reasoning (0 if needsThinking is false). Cap at 3600.
-- questionDifficulty: integer 1–5 (1=trivial, 3=typical, 5=very hard).
-If uncertain, use empty arrays, needsThinking=false, thinkingDurationSeconds=0, questionDifficulty=3, extraContextTokensGuess=0, and explain in rationale.`;
+If uncertain, use empty arrays and explain in rationale.`;
 
   const resp = await fetch(apiUrl, {
     method: "POST",
@@ -264,13 +214,10 @@ If uncertain, use empty arrays, needsThinking=false, thinkingDurationSeconds=0, 
   const likelyRaw = parsed.likelyFiles;
   const relatedRaw = parsed.relatedFiles;
   const rationale = typeof parsed.rationale === "string" ? parsed.rationale : "";
-  const modelFields = parseLlmScopeModelFields(parsed);
-  const combined = combineLlmScopeTokens({
-    ...modelFields,
-    thinkingTokensPerSecond: THINKING_TOKENS_PER_SEC,
-    maxThinkingDurationSeconds: MAX_THINKING_SECONDS,
-    difficultyExtraTokensPerStep: DIFFICULTY_EXTRA_PER_STEP,
-  });
+  const extraGuess =
+    typeof parsed.extraContextTokensGuess === "number" && Number.isFinite(parsed.extraContextTokensGuess)
+      ? Math.round(parsed.extraContextTokensGuess)
+      : 0;
 
   const likely = filterToGraphPaths(likelyRaw, nodeSet);
   const related = filterToGraphPaths(relatedRaw, nodeSet);
@@ -287,13 +234,7 @@ If uncertain, use empty arrays, needsThinking=false, thinkingDurationSeconds=0, 
     relatedCount: related.length,
     /** Distinct graph paths in likely ∪ related (proxy for “how many files might be read”). */
     distinctFilesInScope: readFilesEstimate,
-    extraContextTokensGuess: modelFields.extraContextTokensGuess,
-    needsThinking: modelFields.needsThinking,
-    thinkingDurationSeconds: modelFields.thinkingDurationSeconds,
-    questionDifficulty: modelFields.questionDifficulty,
-    thinkingTokensFromDuration: combined.thinkingTokensFromDuration,
-    difficultyExtraTokens: combined.difficultyExtraTokens,
-    extraContextTokensCombined: combined.extraContextTokensCombined,
+    extraContextTokensGuess: extraGuess,
     rationale,
   };
 
@@ -313,14 +254,7 @@ If uncertain, use empty arrays, needsThinking=false, thinkingDurationSeconds=0, 
   related.forEach((p) => console.log(`  ${p}`));
   console.log("");
   console.log(`Distinct paths (likely ∪ related): ${readFilesEstimate}`);
-  console.log(`extraContextTokensGuess (model only): ${out.extraContextTokensGuess}`);
-  console.log(
-    `needsThinking: ${out.needsThinking}; thinkingDurationSeconds: ${out.thinkingDurationSeconds}; questionDifficulty: ${out.questionDifficulty}`
-  );
-  console.log(
-    `thinkingTokensFromDuration: ${out.thinkingTokensFromDuration}; difficultyExtraTokens: ${out.difficultyExtraTokens}`
-  );
-  console.log(`extraContextTokensCombined: ${out.extraContextTokensCombined}`);
+  console.log(`extraContextTokensGuess (model): ${out.extraContextTokensGuess}`);
   console.log("");
   console.log("Rationale:");
   console.log(rationale || "(none)");

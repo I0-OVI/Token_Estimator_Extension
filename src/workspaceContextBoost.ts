@@ -38,7 +38,11 @@ function joinUnderRoot(root: string, rel: string): string {
   return path.join(root, ...parts);
 }
 
-export function loadWorkspaceArtifacts(root: string, paths: WorkspaceContextPaths): LoadedWorkspaceArtifacts {
+export function loadWorkspaceArtifacts(
+  root: string,
+  paths: WorkspaceContextPaths,
+  options?: { skipLlmCache?: boolean }
+): LoadedWorkspaceArtifacts {
   const out: LoadedWorkspaceArtifacts = { hasLlmFile: false };
   const g = readJsonIfExists<{
     stats?: { nodeCount?: number };
@@ -58,7 +62,7 @@ export function loadWorkspaceArtifacts(root: string, paths: WorkspaceContextPath
   }
 
   const llmPath = joinUnderRoot(root, paths.llmLastRelativePath);
-  if (fs.existsSync(llmPath)) {
+  if (!options?.skipLlmCache && fs.existsSync(llmPath)) {
     out.hasLlmFile = true;
     const l = readJsonIfExists<{
       extraContextTokensGuess?: number;
@@ -167,12 +171,13 @@ export function enrichEstimateIfWorkspaceArtifacts(
   est: TokenEstimate,
   workspaceRoot: string | undefined,
   enabled: boolean,
-  paths: WorkspaceContextPaths
+  paths: WorkspaceContextPaths,
+  options?: { skipLlmCache?: boolean }
 ): TokenEstimate {
   if (!enabled || !workspaceRoot) {
     return est;
   }
-  const loaded = loadWorkspaceArtifacts(workspaceRoot, paths);
+  const loaded = loadWorkspaceArtifacts(workspaceRoot, paths, options);
   const hasNumericContext =
     (loaded.graphTokenBudget !== undefined && loaded.graphTokenBudget > 0) ||
     loaded.graphNodeCount !== undefined ||
@@ -188,7 +193,8 @@ export function enrichEstimateIfWorkspaceArtifacts(
 /** Shared by estimate dialogs and status bar (same settings + paths). */
 export function enrichEstimateFromWorkspaceSettings(
   est: TokenEstimate,
-  workspaceFolderPath: string | undefined
+  workspaceFolderPath: string | undefined,
+  enrichOptions?: { skipLlmCache?: boolean }
 ): TokenEstimate {
   const enabled = tpGet<boolean>("tokenPrediction.workspaceContextInEstimates", true);
   const paths: WorkspaceContextPaths = {
@@ -209,5 +215,5 @@ export function enrichEstimateFromWorkspaceSettings(
       ".cursor/token_prediction_graph_token_budget.json"
     ),
   };
-  return enrichEstimateIfWorkspaceArtifacts(est, workspaceFolderPath, enabled, paths);
+  return enrichEstimateIfWorkspaceArtifacts(est, workspaceFolderPath, enabled, paths, enrichOptions);
 }

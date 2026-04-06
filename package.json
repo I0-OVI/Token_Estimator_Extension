@@ -24,6 +24,11 @@
         "title": "Estimate tokens…"
       },
       {
+        "command": "tokenPrediction.estimateClipboardLlm",
+        "category": "Token Prediction",
+        "title": "Estimate tokens (clipboard + LLM)…"
+      },
+      {
         "command": "tokenPrediction.interactionLog",
         "category": "Token Prediction",
         "title": "Interaction log…"
@@ -196,7 +201,12 @@
         "tokenPrediction.llm.lastScopeOutputRelativePath": {
           "type": "string",
           "default": ".cursor/token_prediction_llm_scope_last.json",
-          "description": "After a successful LLM scope run, combined and model fields are saved here for optional totals boost in estimates."
+          "description": "Cache written after import-graph LLM scope (extraContextTokensGuess for workspace boost)."
+        },
+        "tokenPrediction.llm.clipboardLlmLastOutputRelativePath": {
+          "type": "string",
+          "default": ".cursor/token_prediction_clipboard_llm_last.json",
+          "description": "Cache written after Estimate (clipboard + LLM): thinking/difficulty merge and combined tokens (for your records; not used by status bar)."
         },
         "tokenPrediction.llm.thinkingTokensPerSecond": {
           "type": "number",
