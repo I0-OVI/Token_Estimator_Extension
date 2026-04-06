@@ -3,6 +3,7 @@
   "displayName": "Token Prediction",
   "description": "Estimate token usage from task context using tokenizer-aligned counts and baseline heuristics.",
   "version": "0.1.12",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
