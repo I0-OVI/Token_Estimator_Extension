@@ -192,7 +192,28 @@
         "tokenPrediction.llm.lastScopeOutputRelativePath": {
           "type": "string",
           "default": ".cursor/token_prediction_llm_scope_last.json",
-          "description": "After a successful LLM scope run, extraContextTokensGuess is saved here for optional totals boost in estimates."
+          "description": "After a successful LLM scope run, combined and model fields are saved here for optional totals boost in estimates."
+        },
+        "tokenPrediction.llm.thinkingTokensPerSecond": {
+          "type": "number",
+          "default": 32,
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "If the model reports thinking time (seconds), multiply by this to estimate thinking token budget. 0 disables duration-based tokens."
+        },
+        "tokenPrediction.llm.maxThinkingDurationSeconds": {
+          "type": "number",
+          "default": 1200,
+          "minimum": 0,
+          "maximum": 86400,
+          "description": "Cap model-reported thinking duration (seconds) before converting to tokens."
+        },
+        "tokenPrediction.llm.difficultyExtraTokensPerStep": {
+          "type": "number",
+          "default": 400,
+          "minimum": 0,
+          "maximum": 200000,
+          "description": "For questionDifficulty 1–5 from the LLM, add (difficulty − 1) × this many tokens to the combined extra-context estimate. 0 disables."
         },
         "tokenPrediction.workspaceContextInEstimates": {
           "type": "boolean",

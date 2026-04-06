@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { tpGet } from "./configRead";
+import { combineLlmScopeTokens, parseLlmScopeModelFields } from "./llmScopeCompute";
 
 const SECRET_KEY = "tokenPrediction.llm.apiKey";
 
@@ -204,13 +205,20 @@ export async function runEstimateScopeWithLlm(context: vscode.ExtensionContext):
     graphSummary,
   });
 
-  const systemPrompt = `You are helping estimate which source files a coding agent might touch. You receive user text and a partial import graph. Each node has "id" (repo-relative path) and "roleHint" (short description: e.g. package.json lists npm script names). Reply with JSON only, no markdown:
-{"likelyFiles":[],"relatedFiles":[],"rationale":"","extraContextTokensGuess":0}
+  const thinkingTokPerSec = tpGet<number>("tokenPrediction.llm.thinkingTokensPerSecond", 32);
+  const maxThinkSec = tpGet<number>("tokenPrediction.llm.maxThinkingDurationSeconds", 1200);
+  const diffPerStep = tpGet<number>("tokenPrediction.llm.difficultyExtraTokensPerStep", 400);
+
+  const systemPrompt = `You are helping estimate which source files a coding agent might touch, how hard the user's question is, and how much hidden context/thinking might be needed. You receive user text and a partial import graph. Each node has "id" (repo-relative path) and "roleHint" (short description: e.g. package.json lists npm script names). Reply with JSON only, no markdown:
+{"likelyFiles":[],"relatedFiles":[],"rationale":"","extraContextTokensGuess":0,"needsThinking":false,"thinkingDurationSeconds":0,"questionDifficulty":3}
 Rules:
 - likelyFiles: 0–12 paths that best match the user's intent; each path MUST be exactly one of the strings in graphSummary.truncatedSampleNodes[].id (or unambiguous prefix/suffix match). Use roleHint to choose files for tasks like "packaging", "build", "tests", etc.
 - relatedFiles: neighbors in the graph that may also be read/changed.
 - extraContextTokensGuess: rough integer for extra tokens beyond the visible user text (system/tools/context), 0–500000.
-If uncertain, use empty arrays and explain in rationale.`;
+- needsThinking: true if answering well likely requires extended reasoning (multi-step analysis, deep debugging, design tradeoffs); false for trivial or one-shot answers.
+- thinkingDurationSeconds: your estimate of how many seconds such reasoning might take (integer, 0 if needsThinking is false). Cap your own estimate at 3600.
+- questionDifficulty: integer 1–5 where 1=trivial/quick, 3=typical coding task, 5=very hard (large refactor, research, ambiguous requirements).
+If uncertain, use empty arrays, needsThinking=false, thinkingDurationSeconds=0, questionDifficulty=3, extraContextTokensGuess=0, and explain in rationale.`;
 
   await vscode.window.withProgress(
     {
@@ -250,10 +258,13 @@ If uncertain, use empty arrays and explain in rationale.`;
         const likelyRaw = parsed.likelyFiles;
         const relatedRaw = parsed.relatedFiles;
         const rationale = typeof parsed.rationale === "string" ? parsed.rationale : "";
-        const extraGuess =
-          typeof parsed.extraContextTokensGuess === "number" && Number.isFinite(parsed.extraContextTokensGuess)
-            ? Math.round(parsed.extraContextTokensGuess)
-            : 0;
+        const modelFields = parseLlmScopeModelFields(parsed);
+        const combined = combineLlmScopeTokens({
+          ...modelFields,
+          thinkingTokensPerSecond: thinkingTokPerSec,
+          maxThinkingDurationSeconds: maxThinkSec,
+          difficultyExtraTokensPerStep: diffPerStep,
+        });
 
         const likely = filterToGraphPaths(likelyRaw, nodeSet);
         const related = filterToGraphPaths(relatedRaw, nodeSet);
@@ -268,7 +279,14 @@ If uncertain, use empty arrays and explain in rationale.`;
         ch.appendLine(`relatedFiles (${related.length}):`);
         related.forEach((p) => ch.appendLine(`  ${p}`));
         ch.appendLine("");
-        ch.appendLine(`extraContextTokensGuess (model): ${extraGuess}`);
+        ch.appendLine(`extraContextTokensGuess (model only): ${modelFields.extraContextTokensGuess}`);
+        ch.appendLine(
+          `needsThinking: ${modelFields.needsThinking}; thinkingDurationSeconds: ${modelFields.thinkingDurationSeconds}; questionDifficulty: ${modelFields.questionDifficulty}`
+        );
+        ch.appendLine(
+          `thinkingTokensFromDuration: ${combined.thinkingTokensFromDuration}; difficultyExtraTokens: ${combined.difficultyExtraTokens}`
+        );
+        ch.appendLine(`extraContextTokensCombined (for estimates): ${combined.extraContextTokensCombined}`);
         ch.appendLine("");
         ch.appendLine("rationale:");
         ch.appendLine(rationale || "(none)");
@@ -289,9 +307,15 @@ If uncertain, use empty arrays and explain in rationale.`;
             lastPath,
             JSON.stringify(
               {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 generatedAtIso: new Date().toISOString(),
-                extraContextTokensGuess: extraGuess,
+                extraContextTokensGuess: modelFields.extraContextTokensGuess,
+                needsThinking: modelFields.needsThinking,
+                thinkingDurationSeconds: modelFields.thinkingDurationSeconds,
+                questionDifficulty: modelFields.questionDifficulty,
+                thinkingTokensFromDuration: combined.thinkingTokensFromDuration,
+                difficultyExtraTokens: combined.difficultyExtraTokens,
+                extraContextTokensCombined: combined.extraContextTokensCombined,
                 likelyFilesCount: likely.length,
                 relatedFilesCount: related.length,
               },

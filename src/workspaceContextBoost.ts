@@ -60,9 +60,21 @@ export function loadWorkspaceArtifacts(root: string, paths: WorkspaceContextPath
   const llmPath = joinUnderRoot(root, paths.llmLastRelativePath);
   if (fs.existsSync(llmPath)) {
     out.hasLlmFile = true;
-    const l = readJsonIfExists<{ extraContextTokensGuess?: number }>(llmPath);
-    if (typeof l?.extraContextTokensGuess === "number" && Number.isFinite(l.extraContextTokensGuess)) {
-      out.llmExtraGuess = Math.round(l.extraContextTokensGuess);
+    const l = readJsonIfExists<{
+      extraContextTokensGuess?: number;
+      extraContextTokensCombined?: number;
+    }>(llmPath);
+    const combined =
+      typeof l?.extraContextTokensCombined === "number" && Number.isFinite(l.extraContextTokensCombined)
+        ? Math.round(l.extraContextTokensCombined)
+        : undefined;
+    const legacy =
+      typeof l?.extraContextTokensGuess === "number" && Number.isFinite(l.extraContextTokensGuess)
+        ? Math.round(l.extraContextTokensGuess)
+        : undefined;
+    const pick = combined ?? legacy;
+    if (pick !== undefined) {
+      out.llmExtraGuess = pick;
     }
   }
 
