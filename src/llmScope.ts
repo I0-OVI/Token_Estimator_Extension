@@ -69,7 +69,7 @@ export function parseLlmJsonContent(content: string): Record<string, unknown> {
   return JSON.parse(m[0]) as Record<string, unknown>;
 }
 
-function filterToGraphPaths(paths: unknown, nodeSet: Set<string>): string[] {
+export function filterToGraphPaths(paths: unknown, nodeSet: Set<string>): string[] {
   if (!Array.isArray(paths)) {
     return [];
   }

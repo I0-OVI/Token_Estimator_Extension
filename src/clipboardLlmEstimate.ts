@@ -24,6 +24,7 @@
  * - `thinkingDurationSeconds` — seconds of reasoning (0 if not needed); capped by `tokenPrediction.llm.maxThinkingDurationSeconds`.
  * - `questionDifficulty` — 1–5 (1 trivial, 5 very hard).
  * - `rationale` — optional text (shown in output channel).
+ * - `likelyFiles` / `relatedFiles` — when an import graph JSON exists, same rules as graph LLM scope; paths filtered to graph nodes. Shown in the estimate modal and Output; optional reference tiktoken sum from `graph_token_budget.json` for those paths only (informational — not double-added to totals if workspace boost already used full graph).
  *
  * **D. Client-side merge (`combineLlmScopeTokens`)**
  * - `thinkingTokensFromDuration` = `needsThinking ? min(thinkingDurationSeconds, maxSec) × thinkingTokensPerSecond : 0`
@@ -47,7 +48,7 @@ import {
   type WorkspaceContextPaths,
 } from "./workspaceContextBoost";
 import { combineLlmScopeTokens, parseLlmScopeModelFields } from "./llmScopeCompute";
-import { LLM_SECRET_KEY, parseLlmJsonContent, resolveLlmApiUrl } from "./llmScope";
+import { filterToGraphPaths, LLM_SECRET_KEY, parseLlmJsonContent, resolveLlmApiUrl } from "./llmScope";
 
 let outputChannel: vscode.OutputChannel | undefined;
 
@@ -56,6 +57,92 @@ function getOutputChannel(): vscode.OutputChannel {
     outputChannel = vscode.window.createOutputChannel("Token Prediction");
   }
   return outputChannel;
+}
+
+/** Load import graph for LLM payload; returns null if missing or invalid. */
+function loadGraphForClipboardLlm(root: string): {
+  graphSummary: {
+    nodeCount: number;
+    truncatedSampleNodes: { id: string; roleHint: string }[];
+    truncatedSampleNodeIds: string[];
+    edgesSample: unknown[];
+  };
+  nodeSet: Set<string>;
+} | null {
+  const graphRel = tpGet<string>(
+    "tokenPrediction.importGraph.graphOutputRelativePath",
+    ".cursor/token_prediction_import_graph.json"
+  );
+  const fullPath = path.join(root, ...graphRel.split(/[/\\]/).filter(Boolean));
+  let graphRaw: string;
+  try {
+    graphRaw = fs.readFileSync(fullPath, "utf8");
+  } catch {
+    return null;
+  }
+  let graph: {
+    nodes?: { id: string; roleHint?: string }[];
+    edges?: unknown[];
+    stats?: { nodeCount?: number };
+  };
+  try {
+    graph = JSON.parse(graphRaw) as typeof graph;
+  } catch {
+    return null;
+  }
+  const nodes = graph.nodes ?? [];
+  const edges = graph.edges ?? [];
+  const nodeSet = new Set(nodes.map((n) => n.id));
+  const maxNodes = 80;
+  const maxEdges = 160;
+  const truncatedSampleNodes = nodes.slice(0, maxNodes).map((n) => ({
+    id: n.id,
+    roleHint: typeof n.roleHint === "string" ? n.roleHint : "",
+  }));
+  return {
+    graphSummary: {
+      nodeCount: graph.stats?.nodeCount ?? nodes.length,
+      truncatedSampleNodes,
+      truncatedSampleNodeIds: truncatedSampleNodes.map((n) => n.id),
+      edgesSample: edges.slice(0, maxEdges),
+    },
+    nodeSet,
+  };
+}
+
+/** Sum per-file tokens from graph token budget JSON for given graph node ids (reference only). */
+function sumBudgetTokensForPaths(
+  root: string,
+  budgetRel: string,
+  paths: string[]
+): { sum: number; matched: number } {
+  if (paths.length === 0) {
+    return { sum: 0, matched: 0 };
+  }
+  const budgetPath = path.join(root, ...budgetRel.split(/[/\\]/).filter(Boolean));
+  let raw: string;
+  try {
+    raw = fs.readFileSync(budgetPath, "utf8");
+  } catch {
+    return { sum: 0, matched: 0 };
+  }
+  let doc: { byFile?: { id: string; tokens?: number }[] };
+  try {
+    doc = JSON.parse(raw) as typeof doc;
+  } catch {
+    return { sum: 0, matched: 0 };
+  }
+  const byFile = doc.byFile ?? [];
+  const want = new Set(paths);
+  let sum = 0;
+  let matched = 0;
+  for (const row of byFile) {
+    if (typeof row.id === "string" && want.has(row.id) && typeof row.tokens === "number") {
+      sum += row.tokens;
+      matched += 1;
+    }
+  }
+  return { sum, matched };
 }
 
 export async function runClipboardLlmEstimate(context: vscode.ExtensionContext): Promise<void> {
@@ -96,21 +183,6 @@ export async function runClipboardLlmEstimate(context: vscode.ExtensionContext):
   });
   const keywordMode = parseKeywordTaskKindMode(cfg.get<string>("keywordTaskKindMode"));
 
-  const systemPrompt = `You help estimate token usage for a coding assistant turn. You only see the user's message (clipboard). Reply with JSON only, no markdown:
-{"extraContextTokensGuess":0,"needsThinking":false,"thinkingDurationSeconds":0,"questionDifficulty":3,"rationale":""}
-Fields:
-- extraContextTokensGuess: integer 0–500000, rough extra tokens beyond the visible user text (system prompts, tools, retrieval, hidden context).
-- needsThinking: true if a good answer likely needs extended reasoning (multi-step debugging, design tradeoffs); false for trivial or one-shot replies.
-- thinkingDurationSeconds: integer seconds of such reasoning (0 if needsThinking is false). Cap your estimate at 3600.
-- questionDifficulty: integer 1–5 (1=trivial, 3=typical task, 5=very hard / large change).
-- rationale: short English explanation (optional).
-If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficulty=3, extraContextTokensGuess=0.`;
-
-  const userPayload = JSON.stringify({
-    userText: text.slice(0, 12000),
-    source: "clipboard",
-  });
-
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -121,6 +193,28 @@ If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficult
       const ac = new AbortController();
       const sub = token.onCancellationRequested(() => ac.abort());
       try {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        const graphPack = folder ? loadGraphForClipboardLlm(folder.uri.fsPath) : null;
+
+        const systemPrompt = `You help estimate token usage for a coding assistant turn. The user message is from the clipboard. Reply with JSON only, no markdown:
+{"extraContextTokensGuess":0,"needsThinking":false,"thinkingDurationSeconds":0,"questionDifficulty":3,"rationale":"","likelyFiles":[],"relatedFiles":[]}
+Fields:
+- extraContextTokensGuess: integer 0–500000, rough extra tokens beyond the visible user text (system prompts, tools, retrieval, hidden context).
+- needsThinking: true if a good answer likely needs extended reasoning (multi-step debugging, design tradeoffs); false for trivial or one-shot replies.
+- thinkingDurationSeconds: integer seconds of such reasoning (0 if needsThinking is false). Cap your estimate at 3600.
+- questionDifficulty: integer 1–5 (1=trivial, 3=typical task, 5=very hard / large change).
+- rationale: short English explanation (optional).
+- likelyFiles: if the user message includes a JSON field "graphSummary" with import-graph nodes, list 0–12 repo-relative paths that the agent might edit; each MUST match graphSummary.truncatedSampleNodes[].id (or unambiguous basename match). Use roleHint to pick packaging, tests, config, etc. If graphSummary is null or missing, leave [].
+- relatedFiles: same graph rules — neighbors that may be read; if no graph, leave [].
+If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficulty=3, extraContextTokensGuess=0, and empty arrays for likelyFiles and relatedFiles.`;
+
+        const userPayload = JSON.stringify({
+          userText: text.slice(0, 12000),
+          source: "clipboard",
+          workspaceName: folder?.name ?? "",
+          graphSummary: graphPack ? graphPack.graphSummary : null,
+        });
+
         const resp = await fetch(apiUrl, {
           method: "POST",
           headers: {
@@ -155,8 +249,25 @@ If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficult
           difficultyExtraTokensPerStep: diffPerStep,
         });
 
+        let likely: string[] = [];
+        let related: string[] = [];
+        if (graphPack) {
+          likely = filterToGraphPaths(parsed.likelyFiles, graphPack.nodeSet);
+          related = filterToGraphPaths(parsed.relatedFiles, graphPack.nodeSet);
+        }
+
+        const budgetRel = tpGet<string>(
+          "tokenPrediction.importGraph.graphTokenBudgetRelativePath",
+          ".cursor/token_prediction_graph_token_budget.json"
+        );
+        const root = folder?.uri.fsPath;
+        const scopePaths = [...new Set([...likely, ...related])];
+        const budgetRef =
+          root && scopePaths.length > 0
+            ? sumBudgetTokensForPaths(root, budgetRel, scopePaths)
+            : { sum: 0, matched: 0 };
+
         let { est, extraNotes } = runEstimateWithKeywords(text, baseOpts, keywordMode);
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         const workspaceEnabled = tpGet<boolean>("tokenPrediction.workspaceContextInEstimates", true);
         const paths: WorkspaceContextPaths = {
           graphRelativePath: tpGet<string>(
@@ -183,8 +294,26 @@ If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficult
         ];
         est = applyWorkspaceContextBoost(est, combined.extraContextTokensCombined, llmParts);
 
+        const fileLines: string[] = [];
+        if (graphPack) {
+          fileLines.push(
+            `Likely files (LLM, ${likely.length}): ${likely.slice(0, 8).join(", ") || "(none)"}${likely.length > 8 ? " …" : ""}`
+          );
+          fileLines.push(
+            `Related files (LLM, ${related.length}): ${related.slice(0, 8).join(", ") || "(none)"}${related.length > 8 ? " …" : ""}`
+          );
+          if (budgetRef.sum > 0) {
+            fileLines.push(
+              `Ref: tiktoken sum for ${budgetRef.matched}/${scopePaths.length} paths in graph budget JSON (not added again — workspace boost may already include full graph).`
+            );
+          }
+        } else {
+          fileLines.push("Import graph: not loaded — run Scan workspace + import graph for likely/related file paths.");
+        }
+
         const msg = [
-          "Source: clipboard + LLM (one API call; import-graph LLM cache not applied here).",
+          "Source: clipboard + LLM (one API call; import-graph scope cache not applied here).",
+          ...fileLines,
           `Tokenizer: ${est.tokenizerId}`,
           `Task profile (heuristic): ${est.notes.find((n) => n.startsWith("Task profile:")) ?? `taskKind=${baseOpts.taskKind}`}`,
           `Input tokens: ${est.inputTokens}`,
@@ -210,11 +339,27 @@ If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficult
         );
         ch.appendLine(`extraContextTokensCombined: ${combined.extraContextTokensCombined}`);
         ch.appendLine("");
+        if (graphPack) {
+          ch.appendLine(`likelyFiles (${likely.length}):`);
+          likely.forEach((p) => ch.appendLine(`  ${p}`));
+          ch.appendLine("");
+          ch.appendLine(`relatedFiles (${related.length}):`);
+          related.forEach((p) => ch.appendLine(`  ${p}`));
+          ch.appendLine("");
+          if (budgetRef.sum > 0) {
+            ch.appendLine(
+              `Reference tiktoken sum (graph budget, matched paths): ${budgetRef.sum} tok (${budgetRef.matched} files matched in byFile)`
+            );
+            ch.appendLine("");
+          }
+        } else {
+          ch.appendLine("(No import graph in workspace — likelyFiles/relatedFiles not used.)");
+          ch.appendLine("");
+        }
         ch.appendLine("rationale:");
         ch.appendLine(rationale || "(none)");
         ch.show();
 
-        const folder = vscode.workspace.workspaceFolders?.[0];
         if (folder) {
           try {
             const rel = tpGet<string>(
@@ -237,6 +382,10 @@ If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficult
                   thinkingTokensFromDuration: combined.thinkingTokensFromDuration,
                   difficultyExtraTokens: combined.difficultyExtraTokens,
                   extraContextTokensCombined: combined.extraContextTokensCombined,
+                  likelyFiles: likely,
+                  relatedFiles: related,
+                  graphBudgetTokensRefSum: budgetRef.sum,
+                  graphBudgetTokensRefMatched: budgetRef.matched,
                 },
                 null,
                 0
