@@ -11,3 +11,6 @@ out/
 
 # Cursor workspace exports (large, often sensitive)
 cursor_export_*/
+
+# ML training outputs (regenerate with npm run train-offline)
+scripts/ml/output/

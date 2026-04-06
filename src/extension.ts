@@ -15,10 +15,11 @@ import { countTokens, freeAllEncodings } from "./tokenizer";
 import { runClipboardLlmEstimate } from "./clipboardLlmEstimate";
 import { runEstimateScopeWithLlm, setLlmApiKey } from "./llmScope";
 import { enrichEstimateFromWorkspaceSettings } from "./workspaceContextBoost";
+import { buildEstimateRuntimeContext } from "./estimateRuntime";
 
 let editTracker: EditSessionTracker | undefined;
 
-async function estimateFromActiveEditor(): Promise<void> {
+async function estimateFromActiveEditor(extUri: vscode.Uri): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     vscode.window.showWarningMessage(
@@ -57,7 +58,8 @@ async function estimateFromActiveEditor(): Promise<void> {
     hasSelection: Boolean(selection && !selection.isEmpty),
   };
 
-  let { est, extraNotes } = runEstimateWithKeywords(text, baseOpts, keywordMode);
+  const ctx = buildEstimateRuntimeContext(extUri, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+  let { est, extraNotes } = await runEstimateWithKeywords(text, baseOpts, keywordMode, ctx);
   est = enrichEstimateFromWorkspaceSettings(est, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
 
   const msg = [
@@ -73,7 +75,7 @@ async function estimateFromActiveEditor(): Promise<void> {
   vscode.window.showInformationMessage(msg, { modal: true });
 }
 
-async function estimateFromClipboard(): Promise<void> {
+async function estimateFromClipboard(extUri: vscode.Uri): Promise<void> {
   const text = (await vscode.env.clipboard.readText()).replace(/\r\n/g, "\n");
   if (!text.trim()) {
     vscode.window.showWarningMessage(
@@ -99,7 +101,8 @@ async function estimateFromClipboard(): Promise<void> {
     hasSelection: true,
   };
 
-  let { est, extraNotes } = runEstimateWithKeywords(text, baseOpts, keywordMode);
+  const ctx = buildEstimateRuntimeContext(extUri, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+  let { est, extraNotes } = await runEstimateWithKeywords(text, baseOpts, keywordMode, ctx);
   est = enrichEstimateFromWorkspaceSettings(est, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
 
   const msg = [
@@ -117,7 +120,8 @@ async function estimateFromClipboard(): Promise<void> {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  registerStatusBar(context);
+  const extUri = context.extensionUri;
+  registerStatusBar(context, extUri);
 
   const onStartTrackingEdits = (): void => {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -137,8 +141,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("tokenPrediction.estimate", (...args: unknown[]) =>
-      runEstimateCommand(args, estimateFromActiveEditor, estimateFromClipboard, () =>
-        runClipboardLlmEstimate(context)
+      runEstimateCommand(
+        args,
+        () => estimateFromActiveEditor(extUri),
+        () => estimateFromClipboard(extUri),
+        () => runClipboardLlmEstimate(context)
       )
     ),
     vscode.commands.registerCommand("tokenPrediction.estimateClipboardLlm", () =>
@@ -158,8 +165,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   /** @deprecated Prefer palette commands above; kept for keybindings / muscle memory */
   const legacy: [string, (...args: unknown[]) => void | Promise<void>][] = [
-    ["tokenPrediction.showEstimateDetail", () => estimateFromActiveEditor()],
-    ["tokenPrediction.estimateFromClipboard", () => estimateFromClipboard()],
+    ["tokenPrediction.showEstimateDetail", () => estimateFromActiveEditor(extUri)],
+    ["tokenPrediction.estimateFromClipboard", () => estimateFromClipboard(extUri)],
     ["tokenPrediction.startTrackingEdits", () => onStartTrackingEdits()],
     ["tokenPrediction.logInteraction", () => onOpenLogInteraction()],
     [

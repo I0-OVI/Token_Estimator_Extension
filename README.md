@@ -43,6 +43,8 @@ Treat numbers as a **reference range**, not as an audit or billing guarantee. Di
 - **`tokenPrediction.taskKind`** — Task profile (`general`, `code`, `refactor`, …) for output heuristics.
 - **`tokenPrediction.includeHistoryTurns`** — Rough allowance for assumed extra dialogue turns.
 - **`tokenPrediction.showStatusBar`** — Toggle status bar estimate.
+- **`tokenPrediction.predictionBackend`** — `heuristic` (built-in only), `lightgbm` (require ONNX model), or `auto` (use ONNX when `token_prediction.onnx` is found).
+- **`tokenPrediction.learnedModelPath`** — Optional absolute or workspace-relative path to `token_prediction.onnx`; overrides the bundled `media/models/token_prediction.onnx` when the file exists.
 
 Full option descriptions are in `package.json` under `contributes.configuration`.
 
@@ -58,6 +60,14 @@ npm run package:vsix     # build a .vsix (requires @vscode/vsce)
 ```
 
 The `scripts/` and `tools/` folders contain offline analysis, feature tables, JSONL validation, and related utilities for research and local data workflows.
+
+### Learned base model (ONNX, optional)
+
+1. Build labeled rows: `npm run build-feature-table` (uses `.cursor/token_prediction_log.jsonl` and compiled `out/` heuristics).
+2. Train and export: `pip install -r scripts/ml/requirements.txt` then `npm run train-offline` — writes `scripts/ml/output/token_prediction.onnx` and `feature_order.json` (same feature order as `src/learnedFeatures.ts`).
+3. Bundle for the extension: copy the ONNX to `media/models/token_prediction.onnx` (or set **`tokenPrediction.learnedModelPath`** to your file). Workspace / LLM boosts still apply **after** this base total.
+
+Inference uses **`onnxruntime-node`**; if the model is missing or inference fails, estimates fall back to the built-in heuristic.
 
 ### Desktop JSONL sample logger (optional)
 

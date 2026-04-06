@@ -2,7 +2,11 @@
  * Local keyword/pattern signals → TaskKind for output heuristics. No network.
  * Tie-breaking: if multiple kinds share the max score, prefer `fallback` when it is among them; else first by priority order.
  */
-import { estimateTokens } from "./predict";
+import {
+  estimateTokensWithLearnedBackend,
+  type LearnedEstimateContext,
+  type PredictionBackendSetting,
+} from "./learnedPredict";
 import type { PredictionOptions, TaskKind, TokenEstimate } from "./types";
 
 export type KeywordTaskKindMode = "off" | "override" | "hint_only";
@@ -98,14 +102,20 @@ export function resolveKeywordTaskOptions(
   return { opts: baseOpts, extraNotes };
 }
 
-/** Single entry: apply keyword mode then run baseline estimateTokens. */
-export function runEstimateWithKeywords(
+export interface EstimateRuntimeContext extends LearnedEstimateContext {
+  predictionBackend?: PredictionBackendSetting;
+}
+
+/** Single entry: apply keyword mode, then learned ONNX base (when configured) or heuristic. */
+export async function runEstimateWithKeywords(
   text: string,
   baseOpts: PredictionOptions,
-  mode: KeywordTaskKindMode
-): { est: TokenEstimate; extraNotes: string[] } {
+  mode: KeywordTaskKindMode,
+  ctx?: EstimateRuntimeContext
+): Promise<{ est: TokenEstimate; extraNotes: string[] }> {
   const { opts, extraNotes } = resolveKeywordTaskOptions(text, baseOpts, baseOpts.taskKind, mode);
-  const est = estimateTokens(text, opts);
+  const backend: PredictionBackendSetting = ctx?.predictionBackend ?? "heuristic";
+  const est = await estimateTokensWithLearnedBackend(text, opts, backend, ctx);
   return { est, extraNotes };
 }
 

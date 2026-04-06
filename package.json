@@ -2,7 +2,7 @@
   "name": "token-prediction",
   "displayName": "Token Prediction",
   "description": "Estimate token usage from task context using tokenizer-aligned counts and baseline heuristics.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -244,6 +244,22 @@
             "Keep settings taskKind for math; append inferred intent to estimate notes only."
           ],
           "description": "Local keyword/pattern classifier for output heuristics — no API."
+        },
+        "tokenPrediction.predictionBackend": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["heuristic", "lightgbm", "auto"],
+          "enumDescriptions": [
+            "Always use the built-in heuristic (tiktoken + task-kind multipliers).",
+            "Require a trained ONNX model (user path or bundled media/models/token_prediction.onnx); fall back to heuristic if missing or on error.",
+            "Use ONNX when a model file is available; otherwise heuristic."
+          ],
+          "description": "Base total estimate: offline-trained regressor (ONNX) or heuristic. Workspace / LLM boosts apply after this."
+        },
+        "tokenPrediction.learnedModelPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to token_prediction.onnx (absolute, or relative to the workspace folder). When set and the file exists, it overrides the bundled media/models default. Empty = try bundled model only."
         }
       }
     }
@@ -273,6 +289,7 @@
   },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.15",
-    "jsonrepair": "^3.13.3"
+    "jsonrepair": "^3.13.3",
+    "onnxruntime-node": "^1.20.0"
   }
 }

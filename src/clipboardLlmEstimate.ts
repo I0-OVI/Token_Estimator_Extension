@@ -41,6 +41,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { predictionOptionsFromVsConfig } from "./config";
 import { tpGet } from "./configRead";
+import { buildEstimateRuntimeContext } from "./estimateRuntime";
 import { parseKeywordTaskKindMode, runEstimateWithKeywords } from "./keywordIntent";
 import {
   applyWorkspaceContextBoost,
@@ -267,7 +268,8 @@ If unsure, use needsThinking=false, thinkingDurationSeconds=0, questionDifficult
             ? sumBudgetTokensForPaths(root, budgetRel, scopePaths)
             : { sum: 0, matched: 0 };
 
-        let { est, extraNotes } = runEstimateWithKeywords(text, baseOpts, keywordMode);
+        const estCtx = buildEstimateRuntimeContext(context.extensionUri, folder?.uri.fsPath);
+        let { est, extraNotes } = await runEstimateWithKeywords(text, baseOpts, keywordMode, estCtx);
         const workspaceEnabled = tpGet<boolean>("tokenPrediction.workspaceContextInEstimates", true);
         const paths: WorkspaceContextPaths = {
           graphRelativePath: tpGet<string>(

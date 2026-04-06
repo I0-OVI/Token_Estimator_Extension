@@ -4,11 +4,9 @@ import { countTokens } from "./tokenizer";
 import type { PredictionOptions, PredictionGranularity, TokenEstimate } from "./types";
 
 /**
- * Optional future backend: `scripts/ml/train_offline.py` fits a model on JSONL
- * (`cursorReportedTokens` + structured features). If offline MAE beats this
- * heuristic, consider a setting such as `tokenPrediction.learnedModelPath`
- * pointing at exported JSON weights or ONNX — keep heuristic as default to
- * avoid bundling heavy runtimes until metrics justify it.
+ * Default baseline when `tokenPrediction.predictionBackend` is heuristic or no ONNX is available.
+ * Learned totals (`estimateTokensWithLearnedBackend` in learnedPredict.ts) use the same shape
+ * then replace totals after `scripts/ml/train_offline.py` exports `token_prediction.onnx`.
  */
 export function estimateTokens(text: string, opts: PredictionOptions): TokenEstimate {
   const tik = countTokens(text, opts.tokenizerId);
@@ -74,7 +72,7 @@ export function estimateTokens(text: string, opts: PredictionOptions): TokenEsti
   return applyGranularityMask(base, opts.granularity);
 }
 
-function applyGranularityMask(est: TokenEstimate, g: PredictionGranularity): TokenEstimate {
+export function applyGranularityMask(est: TokenEstimate, g: PredictionGranularity): TokenEstimate {
   if (g === "total") return est;
   if (g === "input") {
     return {

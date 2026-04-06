@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { predictionOptionsFromVsConfig } from "./config";
+import { buildEstimateRuntimeContext } from "./estimateRuntime";
 import { parseKeywordTaskKindMode, runEstimateWithKeywords } from "./keywordIntent";
 import type { TokenEstimate } from "./types";
 import { enrichEstimateFromWorkspaceSettings } from "./workspaceContextBoost";
@@ -14,7 +15,10 @@ export function formatTokensAsWan(n: number): string {
   return `${s.replace(/\.?0+$/, "")}万`;
 }
 
-function estimateFromEditor(editor: vscode.TextEditor): { est: TokenEstimate; extraNotes: string[] } | null {
+async function estimateFromEditor(
+  editor: vscode.TextEditor,
+  extUri: vscode.Uri
+): Promise<{ est: TokenEstimate; extraNotes: string[] } | null> {
   const cfg = vscode.workspace.getConfiguration("tokenPrediction");
   const baseOpts = predictionOptionsFromVsConfig({
     tokenizer: cfg.get<string>("tokenizer", "cl100k_base"),
@@ -28,8 +32,9 @@ function estimateFromEditor(editor: vscode.TextEditor): { est: TokenEstimate; ex
   const text =
     sel && !sel.isEmpty ? editor.document.getText(sel) : editor.document.getText();
   if (!text.trim()) return null;
-  const pair = runEstimateWithKeywords(text, baseOpts, keywordMode);
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const ctx = buildEstimateRuntimeContext(extUri, root);
+  const pair = await runEstimateWithKeywords(text, baseOpts, keywordMode, ctx);
   pair.est = enrichEstimateFromWorkspaceSettings(pair.est, root);
   return pair;
 }
@@ -55,7 +60,7 @@ function tooltipFor(est: TokenEstimate, extraNotes: string[]): string {
   ].join("\n");
 }
 
-export function registerStatusBar(context: vscode.ExtensionContext): void {
+export function registerStatusBar(context: vscode.ExtensionContext, extensionUri: vscode.Uri): void {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   item.name = "Token Prediction";
   item.command = {
@@ -66,34 +71,36 @@ export function registerStatusBar(context: vscode.ExtensionContext): void {
   context.subscriptions.push(item);
 
   const refresh = () => {
-    const cfg = vscode.workspace.getConfiguration("tokenPrediction");
-    if (!cfg.get<boolean>("showStatusBar", true)) {
-      item.hide();
-      return;
-    }
+    void (async () => {
+      const cfg = vscode.workspace.getConfiguration("tokenPrediction");
+      if (!cfg.get<boolean>("showStatusBar", true)) {
+        item.hide();
+        return;
+      }
 
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      item.text = "$(graph) Token Prediction: —";
-      item.tooltip =
-        "No active editor. Open a file or draft your prompt in a file to see an estimate.\nComposer input is not visible to extensions.";
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        item.text = "$(graph) Token Prediction: —";
+        item.tooltip =
+          "No active editor. Open a file or draft your prompt in a file to see an estimate.\nComposer input is not visible to extensions.";
+        item.show();
+        return;
+      }
+
+      const pair = await estimateFromEditor(editor, extensionUri);
+      if (!pair) {
+        item.text = "$(graph) Token Prediction: —";
+        item.tooltip = "No text in this file (or empty selection).";
+        item.show();
+        return;
+      }
+
+      const { est, extraNotes } = pair;
+      const wan = formatTokensAsWan(est.totalTokensExpected);
+      item.text = `$(graph) Token Prediction: ~${wan}`;
+      item.tooltip = tooltipFor(est, extraNotes);
       item.show();
-      return;
-    }
-
-    const pair = estimateFromEditor(editor);
-    if (!pair) {
-      item.text = "$(graph) Token Prediction: —";
-      item.tooltip = "No text in this file (or empty selection).";
-      item.show();
-      return;
-    }
-
-    const { est, extraNotes } = pair;
-    const wan = formatTokensAsWan(est.totalTokensExpected);
-    item.text = `$(graph) Token Prediction: ~${wan}`;
-    item.tooltip = tooltipFor(est, extraNotes);
-    item.show();
+    })();
   };
 
   const debounced = () => {
