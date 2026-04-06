@@ -2,7 +2,7 @@
   "name": "token-prediction",
   "displayName": "Token Prediction",
   "description": "Estimate token usage from task context using tokenizer-aligned counts and baseline heuristics.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "license": "MIT",
   "repository": {
     "type": "git",
