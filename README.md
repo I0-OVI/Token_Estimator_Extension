@@ -59,6 +59,20 @@ npm run package:vsix     # build a .vsix (requires @vscode/vsce)
 
 The `scripts/` and `tools/` folders contain offline analysis, feature tables, JSONL validation, and related utilities for research and local data workflows.
 
+### Desktop JSONL sample logger (optional)
+
+[`tools/token_sample_logger.py`](tools/token_sample_logger.py) is a small **Tk** GUI that appends **one JSON object per line** to a log file, using the same **schema v1** as the extension’s interaction log (e.g. `userPrompt`, `assistantMarkdown`, token/line/file fields). Use it when you want to record samples **outside** VS Code.
+
+```bash
+npm run sample-logger
+# or
+python3 tools/token_sample_logger.py
+```
+
+- **Default output path**: `<cwd>/.cursor/token_prediction_log.jsonl` (the working directory is wherever you run the command from).
+- **Override path**: `TOKEN_PREDICTION_LOG=/path/to/log.jsonl python3 tools/token_sample_logger.py`
+- **macOS**: Tk **8.6+** is required; the system Python often ships an older Tk and the window may be blank. Prefer a Homebrew Python with Tk (e.g. `brew install python-tk`) or [python.org](https://www.python.org/downloads/) builds, then run that interpreter explicitly.
+
 ---
 
 ## License
