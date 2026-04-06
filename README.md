@@ -4,7 +4,7 @@
 
 ---
 
-## Important disclaimer (please read)
+## Disclaimer
 
 **This extension cannot and does not promise to match any provider’s billed token usage exactly.** Real billing depends on the model and tokenizer the service actually uses, hidden system prompts, tools, multi-turn context, streaming, cache hits, and each vendor’s own metering. The extension only sees **text you can expose locally** (editor, clipboard, scans); the output side is a **heuristic band**, not a forecast.
 
