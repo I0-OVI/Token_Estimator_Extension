@@ -2,7 +2,7 @@
   "name": "token-prediction",
   "displayName": "Token Prediction",
   "description": "Estimate token usage locally: ONNX-learned model (LightGBM-trained when possible) with heuristic fallback; optional workspace graph boosts.",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "license": "MIT",
   "repository": {
     "type": "git",
