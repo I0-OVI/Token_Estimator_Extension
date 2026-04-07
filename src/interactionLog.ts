@@ -40,8 +40,6 @@ export interface LoggedInteractionV1 {
   charHeuristicInputTokens?: number;
   /** Optional: import graph node count when graph JSON existed at log time. */
   graphNodeCountAtLogTime?: number;
-  /** Optional: paths from LLM scope (manual paste); validated offline only if needed. */
-  llmLikelyFiles?: string[];
 }
 
 export class EditSessionTracker implements vscode.Disposable {

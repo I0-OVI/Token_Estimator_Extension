@@ -13,7 +13,7 @@ const CODE_EXT = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i;
 
 const RESOLVE_EXTS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 
-/** Config / manifest files (not matched by CODE_EXT) so LLM can relate tasks like "packaging" to package.json. */
+/** Config / manifest files (not matched by CODE_EXT) so graphs still link tasks like "packaging" to package.json. */
 const EXTRA_GRAPH_FILES = /^package\.json$|^tsconfig\.json$|^jsconfig\.json$/i;
 
 function escapeReg(s: string): string {
@@ -112,7 +112,7 @@ function edgeKind(text: string, spec: string): string {
 const ROLE_HINT_MAX = 220;
 
 /**
- * Short human-readable hint for LLM scope (what this file is for).
+ * Short human-readable hint for graph nodes (what this file is for).
  * Exported for tests / tooling.
  */
 export function inferRoleHint(relPath: string, source: string): string {

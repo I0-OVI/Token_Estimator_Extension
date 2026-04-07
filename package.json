@@ -1,8 +1,8 @@
 {
   "name": "token-prediction",
   "displayName": "Token Prediction",
-  "description": "Estimate token usage from task context using tokenizer-aligned counts and baseline heuristics.",
-  "version": "0.2.2",
+  "description": "Estimate token usage locally: ONNX-learned model (LightGBM-trained when possible) with heuristic fallback; optional workspace graph boosts.",
+  "version": "0.3.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -24,11 +24,6 @@
         "title": "Estimate tokens…"
       },
       {
-        "command": "tokenPrediction.estimateClipboardLlm",
-        "category": "Token Prediction",
-        "title": "Estimate tokens (clipboard + LLM)…"
-      },
-      {
         "command": "tokenPrediction.interactionLog",
         "category": "Token Prediction",
         "title": "Interaction log…"
@@ -37,11 +32,6 @@
         "command": "tokenPrediction.scanWorkspace",
         "category": "Token Prediction",
         "title": "Scan workspace…"
-      },
-      {
-        "command": "tokenPrediction.llm",
-        "category": "Token Prediction",
-        "title": "LLM…"
       }
     ],
     "configuration": {
@@ -177,62 +167,10 @@
           ],
           "description": "How to estimate input-side length for output heuristics."
         },
-        "tokenPrediction.llm.endpointPreset": {
-          "type": "string",
-          "default": "deepseek",
-          "enum": ["deepseek", "openai", "custom"],
-          "enumDescriptions": [
-            "DeepSeek: https://api.deepseek.com/v1/chat/completions (DeepSeek API key).",
-            "OpenAI: https://api.openai.com/v1/chat/completions (OpenAI API key).",
-            "Custom URL (OpenAI-compatible POST) in tokenPrediction.llm.apiUrl."
-          ],
-          "description": "Which host receives LLM scope requests. API key is stored via the command (Secret Storage), never in settings."
-        },
-        "tokenPrediction.llm.apiUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Only when endpoint preset is Custom: full chat-completions URL (e.g. https://api.deepseek.com/v1/chat/completions)."
-        },
-        "tokenPrediction.llm.model": {
-          "type": "string",
-          "default": "deepseek-chat",
-          "description": "Model id for LLM scope (e.g. deepseek-chat for DeepSeek; gpt-4o-mini for OpenAI)."
-        },
-        "tokenPrediction.llm.lastScopeOutputRelativePath": {
-          "type": "string",
-          "default": ".cursor/token_prediction_llm_scope_last.json",
-          "description": "Cache written after import-graph LLM scope (extraContextTokensGuess for workspace boost)."
-        },
-        "tokenPrediction.llm.clipboardLlmLastOutputRelativePath": {
-          "type": "string",
-          "default": ".cursor/token_prediction_clipboard_llm_last.json",
-          "description": "Cache written after Estimate (clipboard + LLM): thinking/difficulty merge and combined tokens (for your records; not used by status bar)."
-        },
-        "tokenPrediction.llm.thinkingTokensPerSecond": {
-          "type": "number",
-          "default": 32,
-          "minimum": 0,
-          "maximum": 100000,
-          "description": "If the model reports thinking time (seconds), multiply by this to estimate thinking token budget. 0 disables duration-based tokens."
-        },
-        "tokenPrediction.llm.maxThinkingDurationSeconds": {
-          "type": "number",
-          "default": 1200,
-          "minimum": 0,
-          "maximum": 86400,
-          "description": "Cap model-reported thinking duration (seconds) before converting to tokens."
-        },
-        "tokenPrediction.llm.difficultyExtraTokensPerStep": {
-          "type": "number",
-          "default": 400,
-          "minimum": 0,
-          "maximum": 200000,
-          "description": "For questionDifficulty 1–5 from the LLM, add (difficulty − 1) × this many tokens to the combined extra-context estimate. 0 disables."
-        },
         "tokenPrediction.workspaceContextInEstimates": {
           "type": "boolean",
           "default": true,
-          "description": "If true, add an extra token budget when import graph and/or workspace scan JSON exists, or when last LLM scope cache has extraContextTokensGuess > 0. No files → same as before."
+          "description": "If true, add an extra token budget when import graph and/or workspace scan JSON exists, using graph token budget or heuristics from node/file counts. No files → same as before."
         },
         "tokenPrediction.keywordTaskKindMode": {
           "type": "string",
@@ -254,7 +192,7 @@
             "Require a trained ONNX model (user path or bundled media/models/token_prediction.onnx); fall back to heuristic if missing or on error.",
             "Use ONNX when a model file is available; otherwise heuristic."
           ],
-          "description": "Base total estimate: offline-trained regressor (ONNX) or heuristic. Workspace / LLM boosts apply after this."
+          "description": "Base total estimate: offline-trained regressor (ONNX) or heuristic. Workspace context boosts apply after this."
         },
         "tokenPrediction.learnedModelPath": {
           "type": "string",
@@ -279,8 +217,7 @@
     "aggregate-agent-transcripts-csv": "node scripts/ml/aggregate-agent-transcripts-csv.mjs",
     "validate-agent-transcripts-per-line": "node scripts/ml/validate-agent-transcripts-per-line.mjs",
     "train-offline": "node scripts/ml/run-train.mjs",
-    "package:vsix": "npm run compile && npx --yes @vscode/vsce@latest package --allow-missing-repository",
-    "llm-scope-offline": "node scripts/llm-scope-offline.mjs"
+    "package:vsix": "npm run compile && npx --yes @vscode/vsce@latest package --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

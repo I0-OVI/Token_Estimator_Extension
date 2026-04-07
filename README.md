@@ -2,7 +2,7 @@
 
 **Token Prediction** is a VS Code extension that gives **rough, local estimates** of how many tokens a task might use. The **primary** path is an **offline-learned model** shipped as **`token_prediction.onnx`** (under `media/models/` in this repo, or via **`tokenPrediction.learnedModelPath`**). Training uses **LightGBM** when the `lightgbm` Python package is available; otherwise a sklearn gradient-boosting model is fitted and exported to the same ONNX format.
 
-**Heuristics** (tiktoken + task-kind rules) and **LLM API** calls are **secondary**: useful as a **baseline for comparison** or for optional “clipboard + LLM” experiments. **You do not need an API key** for normal **Estimate** or the **status bar**—those run locally. **`predictionBackend: auto`** (default) prefers the bundled ONNX; use **`heuristic`** only if you want to compare against the classic heuristic without the learned model.
+**Heuristics** (tiktoken + task-kind rules) are the **fallback and comparison baseline** when ONNX is off or missing. **`predictionBackend: auto`** (default) prefers the bundled ONNX; use **`heuristic`** only if you want the classic heuristic without the learned model. Everything runs **locally**—no API keys or network calls.
 
 ---
 
@@ -20,10 +20,7 @@ Treat numbers as a **reference range**, not as an audit or billing guarantee. Di
 |---|------------------------|----------|
 | **Editor / clipboard estimate, status bar** | Install the extension; open a file or paste text | — |
 | **Learned base (`ONNX`, LightGBM-trained when possible)** | Nothing extra if you use the **bundled** `media/models/token_prediction.onnx` and default **`predictionBackend: auto`** | Custom model: set **`tokenPrediction.learnedModelPath`** or replace the file under `media/models/` |
-| **API keys / network** | **Not** required for estimates or ONNX inference | **Optional / comparison:** only **Token Prediction: LLM…** and **Estimate (clipboard + LLM)** call an OpenAI-compatible API |
-| **Import graph / workspace scan** | **Not** required for ONNX or heuristics | Improves **workspace context boosts** and can enrich graph-related **features** when those JSON files exist |
-
-So: **after you ship a trained ONNX inside the extension, day-to-day use does not depend on calling an LLM or generating a graph.** Graph and LLM remain **optional layers** on top of the base estimate.
+| **Import graph / workspace scan** | **Not** required for ONNX or heuristics | Improves **workspace context boosts** and enriches graph-related **features** when those JSON files exist |
 
 ---
 
@@ -33,7 +30,6 @@ So: **after you ship a trained ONNX inside the extension, day-to-day use does no
 - **Status bar (optional)** — Coarse live hint from the active editor. **Composer / chat input is not visible to extensions**; draft in a file or paste into an editor tab to preview.
 - **Interaction log (JSONL)** — Optional logging for local analysis (path configurable); used when building training data offline.
 - **Workspace scan / import graph** — Optional structure summary and graph JSON for **context boosts** and richer offline features—not mandatory for inference.
-- **LLM (optional)** — OpenAI-compatible endpoint for scope and **clipboard + LLM** flows only. Keys live in VS Code **Secret Storage**.
 
 ---
 
@@ -42,17 +38,15 @@ So: **after you ship a trained ONNX inside the extension, day-to-day use does no
 ### Install
 
 - **From source**: `npm install`, `npm run compile`, then **Run Extension** in VS Code; or `npm run package:vsix` and install the `.vsix` via **Extensions: Install from VSIX…**.
-- **`.vsix` files are not committed** to this repository (`*.vsix` is gitignored). To obtain a file such as `token-prediction-0.2.2.vsix`, run **`npm run package:vsix`** locally (version follows `package.json`), or use a **release attachment** if the maintainer uploads one.
+- **`.vsix` files are not committed** to this repository (`*.vsix` is gitignored). To obtain a packaged build, run **`npm run package:vsix`** locally (version follows `package.json`).
 
 ### Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
 
 | Command | Description |
 |--------|-------------|
-| **Token Prediction: Estimate tokens…** | **Editor/selection** or **clipboard** — local only; no API. |
-| **Token Prediction: Estimate (clipboard + LLM)…** | One LLM call; merges extras into totals (needs API key). |
+| **Token Prediction: Estimate tokens…** | **Editor/selection** or **clipboard** — local only. |
 | **Token Prediction: Interaction log…** | Start edit tracking or open the log panel (JSONL). |
-| **Token Prediction: Scan workspace…** | Structure scan and/or import graph (optional, for boosts / offline features). |
-| **Token Prediction: LLM…** | API key and LLM scope flows. |
+| **Token Prediction: Scan workspace…** | Structure scan and/or import graph (optional, for boosts / offline training features). |
 
 ### Common settings (search `tokenPrediction` in Settings)
 
@@ -63,7 +57,7 @@ So: **after you ship a trained ONNX inside the extension, day-to-day use does no
 - **`tokenPrediction.predictionBackend`** — **`heuristic`**: always the original tiktoken + task-kind heuristic (no ONNX). **`auto`**: use **`token_prediction.onnx`** when present (bundled or via path below); otherwise heuristic. **`lightgbm`**: require ONNX; if missing or inference fails, fall back to heuristic with a note.
 - **`tokenPrediction.learnedModelPath`** — Optional absolute or workspace-relative path to `token_prediction.onnx`. If set and the file exists, it **overrides** the bundled `media/models/token_prediction.onnx`.
 
-Workspace and LLM boosts (when enabled) apply **after** the base estimate, same order as before.
+Workspace context boosts (when enabled) apply **after** the base estimate.
 
 Full option descriptions are in `package.json` under `contributes.configuration`.
 

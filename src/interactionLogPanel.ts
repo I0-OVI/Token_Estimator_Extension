@@ -48,9 +48,7 @@ function html(statsJson: string): string {
   <label>Cursor-reported token usage (optional)</label>
   <input type="number" id="tokens" min="0" step="1" placeholder="e.g. 67000" />
   <p class="hint">Leave empty if unknown. This is the closest to “billing truth” you can paste manually.</p>
-  <label>LLM likely file paths (optional, one per line)</label>
-  <textarea id="llmLikelyFiles" class="optional-paths" placeholder="Paste paths from “Estimate scope with LLM” output if you used it"></textarea>
-  <p class="hint">Optional JSONL fields: char heuristic and graph node count are filled automatically when possible.</p>
+  <p class="hint">Char heuristic and graph node count are filled automatically when possible.</p>
   <button id="save">Append to JSONL log</button>
   <script>
     const vscode = acquireVsCodeApi();
@@ -71,7 +69,6 @@ function html(statsJson: string): string {
       const grepContextFileCount = nonNegInt('grepFiles');
       const readContextFileCount = nonNegInt('readFiles');
       const filesRead = linesToPaths(document.getElementById('filesReadPaths').value);
-      const llmLikelyFiles = linesToPaths(document.getElementById('llmLikelyFiles').value);
       const thoughtMarkdown = document.getElementById('thought').value;
       let filesReadCount = grepContextFileCount + readContextFileCount;
       if (filesReadCount === 0 && filesRead.length > 0) {
@@ -87,7 +84,6 @@ function html(statsJson: string): string {
         filesRead,
         filesReadCount,
         thoughtMarkdown,
-        llmLikelyFiles,
       });
     });
   </script>
@@ -153,7 +149,6 @@ export function openInteractionLogPanel(
       filesRead?: string[];
       filesReadCount?: number;
       thoughtMarkdown?: string;
-      llmLikelyFiles?: string[];
     }) => {
       if (msg.type !== "save") return;
       if (!logPath) {
@@ -203,11 +198,6 @@ export function openInteractionLogPanel(
           graphNodeCountAtLogTime = undefined;
         }
       }
-      const llmLikelyFiles =
-        Array.isArray(msg.llmLikelyFiles) && msg.llmLikelyFiles.length
-          ? msg.llmLikelyFiles.map((s) => s.trim()).filter(Boolean)
-          : undefined;
-
       const entry: LoggedInteractionV1 = {
         schemaVersion: 1,
         timestampIso: new Date().toISOString(),
@@ -229,7 +219,6 @@ export function openInteractionLogPanel(
         thoughtMarkdown,
         charHeuristicInputTokens,
         graphNodeCountAtLogTime,
-        llmLikelyFiles,
       };
       try {
         appendInteractionLog(entry, logPath);

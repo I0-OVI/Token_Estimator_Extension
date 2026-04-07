@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Validate token_prediction_log.jsonl: one JSON object per line, schema v1 required fields.
- * Extra optional keys (e.g. charHeuristicInputTokens, graphNodeCountAtLogTime, llmLikelyFiles) are allowed.
+ * Extra optional keys (e.g. charHeuristicInputTokens, graphNodeCountAtLogTime; legacy llmLikelyFiles in old lines) are allowed.
  * Usage: node scripts/ml/validate-token-prediction-log.mjs [.cursor/token_prediction_log.jsonl]
  */
 import fs from "fs";

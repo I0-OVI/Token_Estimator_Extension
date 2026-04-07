@@ -2,7 +2,6 @@
  * Consolidated command palette flows (QuickPick) + argument dispatch for status bar / legacy IDs.
  */
 import * as vscode from "vscode";
-import { runEstimateScopeWithLlm, setLlmApiKey } from "./llmScope";
 import { runWorkspaceScanAndImportGraph } from "./scanAndGraph";
 import { runWorkspaceStructureScan } from "./workspaceScan";
 
@@ -11,8 +10,7 @@ type Arg = string | undefined;
 export async function runEstimateCommand(
   args: unknown[],
   estimateFromActiveEditor: () => Promise<void>,
-  estimateFromClipboard: () => Promise<void>,
-  estimateFromClipboardLlm?: () => Promise<void>
+  estimateFromClipboard: () => Promise<void>
 ): Promise<void> {
   const mode = args[0] as Arg;
   if (mode === "editor") {
@@ -21,10 +19,6 @@ export async function runEstimateCommand(
   }
   if (mode === "clipboard") {
     await estimateFromClipboard();
-    return;
-  }
-  if (mode === "clipboardLlm") {
-    await estimateFromClipboardLlm?.();
     return;
   }
 
@@ -41,11 +35,6 @@ export async function runEstimateCommand(
         description: "Text you copied (e.g. Composer prompt)",
         value: "clipboard" as const,
       },
-      {
-        label: "$(hubot) Clipboard + LLM",
-        description: "API key required; thinking / difficulty merged into totals",
-        value: "clipboardLlm" as const,
-      },
     ],
     { title: "Token Prediction: estimate from…", placeHolder: "Choose source" }
   );
@@ -54,10 +43,8 @@ export async function runEstimateCommand(
   }
   if (pick.value === "editor") {
     await estimateFromActiveEditor();
-  } else if (pick.value === "clipboard") {
-    await estimateFromClipboard();
   } else {
-    await estimateFromClipboardLlm?.();
+    await estimateFromClipboard();
   }
 }
 
@@ -133,7 +120,7 @@ export async function runScanWorkspaceCommand(args: unknown[]): Promise<void> {
       },
       {
         label: "$(git-branch) Structure + import graph",
-        description: "Summary + dependency graph (recommended for LLM / training)",
+        description: "Summary + dependency graph (for workspace boost / offline training features)",
         value: "graph" as const,
       },
     ],
@@ -157,40 +144,4 @@ export async function runScanWorkspaceCommand(args: unknown[]): Promise<void> {
       void vscode.window.showErrorMessage(`Token Prediction: scan + graph failed: ${msg}`);
     }
   }
-}
-
-export function runLlmCommand(args: unknown[], context: vscode.ExtensionContext): void | Promise<void> {
-  const mode = args[0] as Arg;
-  if (mode === "key") {
-    return setLlmApiKey(context);
-  }
-  if (mode === "scope") {
-    return runEstimateScopeWithLlm(context);
-  }
-
-  void vscode.window
-    .showQuickPick(
-      [
-        {
-          label: "$(key) Set API key",
-          description: "Stored in Secret Storage (not settings.json)",
-          value: "key" as const,
-        },
-        {
-          label: "$(hubot) Estimate scope with LLM",
-          description: "Import graph + prompt → likely files (requires API)",
-          value: "scope" as const,
-        },
-      ],
-      { title: "Token Prediction: LLM…", placeHolder: "Choose action" }
-    )
-    .then((p) => {
-      if (!p) {
-        return;
-      }
-      if (p.value === "key") {
-        return setLlmApiKey(context);
-      }
-      return runEstimateScopeWithLlm(context);
-    });
 }

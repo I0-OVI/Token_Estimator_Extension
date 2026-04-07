@@ -1,5 +1,5 @@
 /**
- * Optional extra token budget when workspace artifacts exist (import graph, scan, last LLM scope).
+ * Optional extra token budget when workspace artifacts exist (import graph, scan).
  * Does nothing if files are missing — baseline estimate unchanged.
  */
 import * as fs from "fs";
@@ -10,7 +10,6 @@ import { tpGet } from "./configRead";
 export interface WorkspaceContextPaths {
   graphRelativePath: string;
   scanRelativePath: string;
-  llmLastRelativePath: string;
   /** Precomputed tiktoken sum over graph node **source files** (file body per path; written on scan). */
   graphTokenBudgetRelativePath: string;
 }
@@ -20,8 +19,6 @@ export interface LoadedWorkspaceArtifacts {
   /** Sum of tiktoken counts for bounded reads of graph node **file contents** (if cache exists). */
   graphTokenBudget?: number;
   scanFileCount?: number;
-  llmExtraGuess?: number;
-  hasLlmFile: boolean;
 }
 
 function readJsonIfExists<T>(absPath: string): T | undefined {
@@ -38,12 +35,8 @@ function joinUnderRoot(root: string, rel: string): string {
   return path.join(root, ...parts);
 }
 
-export function loadWorkspaceArtifacts(
-  root: string,
-  paths: WorkspaceContextPaths,
-  options?: { skipLlmCache?: boolean }
-): LoadedWorkspaceArtifacts {
-  const out: LoadedWorkspaceArtifacts = { hasLlmFile: false };
+export function loadWorkspaceArtifacts(root: string, paths: WorkspaceContextPaths): LoadedWorkspaceArtifacts {
+  const out: LoadedWorkspaceArtifacts = {};
   const g = readJsonIfExists<{
     stats?: { nodeCount?: number };
     nodes?: unknown[];
@@ -61,27 +54,6 @@ export function loadWorkspaceArtifacts(
     out.scanFileCount = s.totals.fileCount;
   }
 
-  const llmPath = joinUnderRoot(root, paths.llmLastRelativePath);
-  if (!options?.skipLlmCache && fs.existsSync(llmPath)) {
-    out.hasLlmFile = true;
-    const l = readJsonIfExists<{
-      extraContextTokensGuess?: number;
-      extraContextTokensCombined?: number;
-    }>(llmPath);
-    const combined =
-      typeof l?.extraContextTokensCombined === "number" && Number.isFinite(l.extraContextTokensCombined)
-        ? Math.round(l.extraContextTokensCombined)
-        : undefined;
-    const legacy =
-      typeof l?.extraContextTokensGuess === "number" && Number.isFinite(l.extraContextTokensGuess)
-        ? Math.round(l.extraContextTokensGuess)
-        : undefined;
-    const pick = combined ?? legacy;
-    if (pick !== undefined) {
-      out.llmExtraGuess = pick;
-    }
-  }
-
   const budgetPath = joinUnderRoot(root, paths.graphTokenBudgetRelativePath);
   const budget = readJsonIfExists<{ totalTokens?: number }>(budgetPath);
   if (typeof budget?.totalTokens === "number" && budget.totalTokens > 0) {
@@ -94,33 +66,19 @@ export function loadWorkspaceArtifacts(
 const BOOST_CAP = 500_000;
 
 /**
- * Prefer precomputed tiktoken sum over import-graph **node file bodies** (after scan), not path-only counts.
- * Else last LLM extraContextTokensGuess. Else sublinear heuristics from node/file counts.
+ * Prefer precomputed tiktoken sum over import-graph **node file bodies** (after scan), else sublinear heuristics from node/file counts.
  */
 export function computeContextBoost(a: LoadedWorkspaceArtifacts): { boost: number; parts: string[] } {
   const parts: string[] = [];
 
   const graphTok = a.graphTokenBudget ?? 0;
-  const llm = a.llmExtraGuess ?? 0;
 
   if (graphTok > 0) {
     const cappedG = Math.min(BOOST_CAP, graphTok);
     parts.push(
       `graph node source files tiktoken sum ${graphTok} tok (full file text per node, capped; boost ${cappedG})`
     );
-    if (llm > 0) {
-      const cappedL = Math.min(BOOST_CAP, llm);
-      const b = Math.max(cappedG, cappedL);
-      parts.push(`LLM last ${llm} tok; boost=max(graph, LLM)=${b}`);
-      return { boost: b, parts };
-    }
     return { boost: cappedG, parts };
-  }
-
-  if (llm > 0) {
-    const capped = Math.min(BOOST_CAP, Math.max(0, llm));
-    parts.push(`last LLM scope (+${capped})`);
-    return { boost: capped, parts };
   }
 
   let boost = 0;
@@ -171,18 +129,16 @@ export function enrichEstimateIfWorkspaceArtifacts(
   est: TokenEstimate,
   workspaceRoot: string | undefined,
   enabled: boolean,
-  paths: WorkspaceContextPaths,
-  options?: { skipLlmCache?: boolean }
+  paths: WorkspaceContextPaths
 ): TokenEstimate {
   if (!enabled || !workspaceRoot) {
     return est;
   }
-  const loaded = loadWorkspaceArtifacts(workspaceRoot, paths, options);
+  const loaded = loadWorkspaceArtifacts(workspaceRoot, paths);
   const hasNumericContext =
     (loaded.graphTokenBudget !== undefined && loaded.graphTokenBudget > 0) ||
     loaded.graphNodeCount !== undefined ||
-    loaded.scanFileCount !== undefined ||
-    (loaded.llmExtraGuess !== undefined && loaded.llmExtraGuess > 0);
+    loaded.scanFileCount !== undefined;
   if (!hasNumericContext) {
     return est;
   }
@@ -193,8 +149,7 @@ export function enrichEstimateIfWorkspaceArtifacts(
 /** Shared by estimate dialogs and status bar (same settings + paths). */
 export function enrichEstimateFromWorkspaceSettings(
   est: TokenEstimate,
-  workspaceFolderPath: string | undefined,
-  enrichOptions?: { skipLlmCache?: boolean }
+  workspaceFolderPath: string | undefined
 ): TokenEstimate {
   const enabled = tpGet<boolean>("tokenPrediction.workspaceContextInEstimates", true);
   const paths: WorkspaceContextPaths = {
@@ -206,14 +161,10 @@ export function enrichEstimateFromWorkspaceSettings(
       "tokenPrediction.workspaceScan.outputRelativePath",
       ".cursor/token_prediction_workspace_scan.json"
     ),
-    llmLastRelativePath: tpGet<string>(
-      "tokenPrediction.llm.lastScopeOutputRelativePath",
-      ".cursor/token_prediction_llm_scope_last.json"
-    ),
     graphTokenBudgetRelativePath: tpGet<string>(
       "tokenPrediction.importGraph.graphTokenBudgetRelativePath",
       ".cursor/token_prediction_graph_token_budget.json"
     ),
   };
-  return enrichEstimateIfWorkspaceArtifacts(est, workspaceFolderPath, enabled, paths, enrichOptions);
+  return enrichEstimateIfWorkspaceArtifacts(est, workspaceFolderPath, enabled, paths);
 }

@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import {
   runEstimateCommand,
   runInteractionLogCommand,
-  runLlmCommand,
   runScanWorkspaceCommand,
 } from "./commandHandlers";
 import { predictionOptionsFromVsConfig } from "./config";
@@ -12,8 +11,6 @@ import { openInteractionLogPanel } from "./interactionLogPanel";
 import { parseKeywordTaskKindMode, runEstimateWithKeywords } from "./keywordIntent";
 import { registerStatusBar } from "./statusBar";
 import { countTokens, freeAllEncodings } from "./tokenizer";
-import { runClipboardLlmEstimate } from "./clipboardLlmEstimate";
-import { runEstimateScopeWithLlm, setLlmApiKey } from "./llmScope";
 import { enrichEstimateFromWorkspaceSettings } from "./workspaceContextBoost";
 import { buildEstimateRuntimeContext } from "./estimateRuntime";
 
@@ -141,15 +138,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("tokenPrediction.estimate", (...args: unknown[]) =>
-      runEstimateCommand(
-        args,
-        () => estimateFromActiveEditor(extUri),
-        () => estimateFromClipboard(extUri),
-        () => runClipboardLlmEstimate(context)
-      )
-    ),
-    vscode.commands.registerCommand("tokenPrediction.estimateClipboardLlm", () =>
-      runClipboardLlmEstimate(context)
+      runEstimateCommand(args, () => estimateFromActiveEditor(extUri), () => estimateFromClipboard(extUri))
     ),
     vscode.commands.registerCommand("tokenPrediction.interactionLog", (...args: unknown[]) =>
       runInteractionLogCommand(args, {
@@ -159,8 +148,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("tokenPrediction.scanWorkspace", (...args: unknown[]) =>
       runScanWorkspaceCommand(args)
-    ),
-    vscode.commands.registerCommand("tokenPrediction.llm", (...args: unknown[]) => runLlmCommand(args, context))
+    )
   );
 
   /** @deprecated Prefer palette commands above; kept for keybindings / muscle memory */
@@ -181,8 +169,6 @@ export function activate(context: vscode.ExtensionContext): void {
         await runScanWorkspaceCommand(["graph"]);
       },
     ],
-    ["tokenPrediction.setLlmApiKey", () => void setLlmApiKey(context)],
-    ["tokenPrediction.estimateScopeWithLlm", () => void runEstimateScopeWithLlm(context)],
   ];
   for (const [id, fn] of legacy) {
     context.subscriptions.push(vscode.commands.registerCommand(id, fn));
