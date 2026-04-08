@@ -48,18 +48,9 @@ Treat numbers as a **reference range**, not as an audit or billing guarantee. Di
 | **Token Prediction: Interaction log…** | Start edit tracking or open the log panel (JSONL). |
 | **Token Prediction: Scan workspace…** | Structure scan and/or import graph (optional, for boosts / offline training features). |
 
-### Common settings (search `tokenPrediction` in Settings)
+### Common settings
 
-- **`tokenPrediction.tokenizer`** — `cl100k_base` or `o200k_base`; pick what matches your billing model best.
-- **`tokenPrediction.taskKind`** — Task profile (`general`, `code`, `refactor`, …) for output-side heuristics when merging ranges.
-- **`tokenPrediction.includeHistoryTurns`** — Rough allowance for assumed extra dialogue turns.
-- **`tokenPrediction.showStatusBar`** — Toggle status bar estimate.
-- **`tokenPrediction.predictionBackend`** — **`heuristic`**: always the original tiktoken + task-kind heuristic (no ONNX). **`auto`**: use **`token_prediction.onnx`** when present (bundled or via path below); otherwise heuristic. **`lightgbm`**: require ONNX; if missing or inference fails, fall back to heuristic with a note.
-- **`tokenPrediction.learnedModelPath`** — Optional absolute or workspace-relative path to `token_prediction.onnx`. If set and the file exists, it **overrides** the bundled `media/models/token_prediction.onnx`.
-
-Workspace context boosts (when enabled) apply **after** the base estimate.
-
-Full option descriptions are in `package.json` under `contributes.configuration`.
+In **Settings**, search **`tokenPrediction`**. The important ones: **`tokenizer`** (`cl100k_base` / `o200k_base`), **`taskKind`**, **`predictionBackend`** (`auto` = bundled ONNX when present, **`heuristic`** = rules only), **`learnedModelPath`** (override ONNX file), **`showStatusBar`**, **`workspaceContextInEstimates`**. Full keys and defaults are in **`package.json`** → `contributes.configuration`.
 
 ---
 
@@ -81,9 +72,8 @@ The `scripts/` and `tools/` folders contain offline analysis, feature tables, JS
 Used when you want to replace or refresh the bundled `media/models/token_prediction.onnx`.
 
 1. **Feature table** (labeled JSONL + heuristics): `npm run build-feature-table` (reads `.cursor/token_prediction_log.jsonl` by default; requires prior `npm run compile`).
-2. **Python deps** (use a venv if you like):  
-   `python3 -m pip install -r scripts/ml/requirements.txt`  
-   (or `.venv/bin/python -m pip install -r scripts/ml/requirements.txt` if the repo has `.venv`).
+2. **Python deps** (venv recommended): `python3 -m pip install -r requirements.txt`  
+   (same packages are listed under `scripts/ml/requirements.txt`; use `.venv/bin/python -m pip` if you use a venv).
 3. **Train + export**: `npm run train-offline` — writes `scripts/ml/output/token_prediction.onnx` and `feature_order.json` (gitignored; feature order is mirrored in `src/learnedFeatures.ts`).
 4. **Ship it**: copy the ONNX to **`media/models/token_prediction.onnx`** or point **`tokenPrediction.learnedModelPath`** at your file, then rebuild the extension / VSIX.
 

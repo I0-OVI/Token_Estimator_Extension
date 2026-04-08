@@ -1,0 +1,3 @@
+# Python dependencies for this repo (offline model training & export).
+# See scripts/ml/requirements.txt for details.
+-r scripts/ml/requirements.txt

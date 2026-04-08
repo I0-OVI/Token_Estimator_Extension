@@ -3,8 +3,8 @@
 Offline model: time-ordered hold-out on feature_table.csv vs cursorReportedTokens.
 Compares training-mean baseline, baseline_heuristic_total (baselines.ts / predict.ts), and tree model.
 
-Dependencies: pip install numpy scikit-learn skl2onnx onnx (see scripts/ml/requirements.txt)
-Optional: pip install lightgbm  (preferred when available; else sklearn GradientBoostingRegressor + ONNX export)
+Dependencies: pip install -r requirements.txt (repo root) or -r scripts/ml/requirements.txt
+  — numpy, scikit-learn, onnx, skl2onnx; lightgbm optional if install fails (else sklearn GBDT + ONNX export)
 """
 from __future__ import annotations
 

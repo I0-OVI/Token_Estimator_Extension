@@ -1,5 +1,15 @@
+# Offline ML: feature table validation, train_offline.py, ONNX export.
+# Install (from repo root or this directory):
+#   python3 -m pip install -r requirements.txt
+#   python3 -m pip install -r scripts/ml/requirements.txt
+#
+# LightGBM: preferred by train_offline when the import succeeds; otherwise sklearn
+# GradientBoostingRegressor is used. On macOS if lightgbm fails to build, run:
+#   brew install libomp
+# then retry pip. You may also `pip install` everything except lightgbm and train without it.
+
 numpy>=1.24
 scikit-learn>=1.3
 onnx>=1.14
 skl2onnx>=1.16
-# Optional: lightgbm (may require `brew install libomp` on macOS for the native library)
+lightgbm>=4.0.0
