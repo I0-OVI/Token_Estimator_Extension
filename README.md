@@ -4,6 +4,8 @@
 
 **Heuristics** (tiktoken + task-kind rules) are the **fallback and comparison baseline** when ONNX is off or missing. **`predictionBackend: auto`** (default) prefers the bundled ONNX; use **`heuristic`** only if you want the classic heuristic without the learned model. Everything runs **locally**—no API keys or network calls.
 
+This is a **standard VS Code extension** (see `engines.vscode` in `package.json`). Install the **`.vsix`** in **VS Code**, **Cursor**, or any editor that supports VS Code-compatible extensions—the same package; you do not need a separate “Cursor build.”
+
 ---
 
 ## Disclaimer
@@ -20,7 +22,18 @@ Treat numbers as a **reference range**, not as an audit or billing guarantee. Di
 |---|------------------------|----------|
 | **Editor / clipboard estimate, status bar** | Install the extension; open a file or paste text | — |
 | **Learned base (`ONNX`, LightGBM-trained when possible)** | Nothing extra if you use the **bundled** `media/models/token_prediction.onnx` and default **`predictionBackend: auto`** | Custom model: set **`tokenPrediction.learnedModelPath`** or replace the file under `media/models/` |
-| **Import graph / workspace scan** | **Not** required for ONNX or heuristics | Improves **workspace context boosts** and enriches graph-related **features** when those JSON files exist |
+| **Import graph / workspace scan** | **Not** required | When present, they **can change the final total** (see below). |
+
+### Import graph, scan, and the **total**
+
+**After you run Scan workspace**, JSON is written under the workspace (default paths in `.cursor/`, configurable in Settings). **That output is not only for offline training** — it can affect **live** estimates in two ways: (1) with **`predictionBackend: auto`**, an **import-graph** file (from **Structure + import graph**) feeds **graph features into the ONNX model**; (2) with **`tokenPrediction.workspaceContextInEstimates`** **on** (default), the extension adds a **workspace boost** on top of the base total using the scan and/or graph JSON — so the **shown total** can go up after a scan even if your prompt text is unchanged. Turn **`workspaceContextInEstimates`** **off** to disable that boost only (ONNX can still use the graph file for model inputs if present).
+
+- **Structure-only scan** → produces **`token_prediction_workspace_scan.json`**. Used for the boost (e.g. scanned file count), **not** as direct inputs inside the ONNX feature vector.
+- **Structure + import graph** → also writes the **import graph** JSON (and may write a **graph token budget** JSON). Those feed **graph statistics into the ONNX model** (when using **`predictionBackend: auto`**) **and** can increase the workspace boost (graph token sum or heuristics from node counts).
+- **You can estimate without running Scan** — base totals use only **editor/clipboard text** (plus settings). With no graph file, **ONNX graph features** are **zeros**; with no scan JSON, the **scan-based** part of the boost is absent.
+- **If `workspaceContextInEstimates` is off**: the **workspace boost** step is skipped (scan/scan+graph JSON are not used to add tokens on top of the base). The ONNX path can **still** read the import-graph JSON for **model features** when a graph file exists — that is separate from the boost.
+
+Turn off **`workspaceContextInEstimates`** if you want totals **without** workspace-derived bumps. Pure **`heuristic`** mode ignores ONNX but can still apply workspace boost when that setting is enabled.
 
 ---
 
@@ -29,7 +42,7 @@ Treat numbers as a **reference range**, not as an audit or billing guarantee. Di
 - **Estimate tokens** — Full file or selection in the active editor, or clipboard text: tiktoken on the input side, plus output/total bands (heuristic) or a learned total (ONNX) merged with the same range machinery.
 - **Status bar (optional)** — Coarse live hint from the active editor. **Composer / chat input is not visible to extensions**; draft in a file or paste into an editor tab to preview.
 - **Interaction log (JSONL)** — Optional logging for local analysis (path configurable); used when building training data offline.
-- **Workspace scan / import graph** — Optional structure summary and graph JSON for **context boosts** and richer offline features—not mandatory for inference.
+- **Workspace scan / import graph** — Optional JSON artifacts for **workspace boosts** and (with ONNX) **richer model inputs**—not mandatory for a first estimate.
 
 ---
 
@@ -37,7 +50,7 @@ Treat numbers as a **reference range**, not as an audit or billing guarantee. Di
 
 ### Install
 
-- **From source**: `npm install`, `npm run compile`, then **Run Extension** in VS Code; or `npm run package:vsix` and install the `.vsix` via **Extensions: Install from VSIX…**.
+- **From source**: `npm install`, `npm run compile`, then **Run Extension** in VS Code or Cursor; or `npm run package:vsix` and install the `.vsix` via **Extensions: Install from VSIX…**.
 - **`.vsix` files are not committed** to this repository (`*.vsix` is gitignored). To obtain a packaged build, run **`npm run package:vsix`** locally (version follows `package.json`).
 
 ### Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
